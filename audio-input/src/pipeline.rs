@@ -56,6 +56,11 @@ impl<D: PitchDetector> StreamingPipeline<D> {
 
         let mut events = Vec::new();
 
+        // NOTE: this is effectively a single `if` — `last_run_sample`
+        // is snapped to `total_samples`, so the loop condition is false
+        // after one pass. Chunks from the 20ms poll loop are far below
+        // the hop size; a push >= 2x HOP runs inference once, which is
+        // fine for realtime capture.
         while self.total_samples >= WINDOW_SAMPLES
             && self.total_samples - self.last_run_sample >= HOP_SAMPLES
         {
@@ -70,16 +75,27 @@ impl<D: PitchDetector> StreamingPipeline<D> {
         let window: Vec<f32> = self.history.iter().copied().collect();
         debug_assert_eq!(window.len(), WINDOW_SAMPLES);
 
+        // Window start is push-boundary aligned, not 160-sample aligned,
+        // so `first_frame` truncation carries up to ~10ms phase error vs
+        // the global grid — well inside tracker tolerance; do not "fix".
+        let window_start_sample = self.total_samples - WINDOW_SAMPLES;
+        let first_frame = window_start_sample / SAMPLES_PER_FRAME;
+
         // energy gate
         let rms = (window.iter().map(|s| s * s).sum::<f32>() / window.len() as f32).sqrt();
         if rms < RMS_GATE {
-            // prolonged silence: early-release sustained notes is a
-            // possible optimization; conservatively just skip
+            // Silence has outlasted the trust margin when the window
+            // start has slid past the fed frontier: any sounding notes
+            // ended (the tracker's frame clock is frozen while unfed,
+            // so its release/lifetime logic would never fire). Release
+            // them and retire the silent gap.
+            if first_frame > self.last_trusted_end {
+                self.last_trusted_end = first_frame;
+                return self.tracker.all_notes_off();
+            }
             return Vec::new();
         }
 
-        let window_start_sample = self.total_samples - WINDOW_SAMPLES;
-        let first_frame = window_start_sample / SAMPLES_PER_FRAME;
         let probs: FrameProbabilities = self.detector.detect(&window, first_frame);
 
         // Feed only NEW trusted frames: a monotonic frontier
@@ -194,5 +210,84 @@ mod tests {
         let silence = vec![0.0_f32; WINDOW_SAMPLES];
         assert!(p.push(&silence).is_empty());
         assert_eq!(p.history.len(), WINDOW_SAMPLES);
+    }
+
+    /// A sounding note must be force-released once the window has slid
+    /// fully into silence, and later sound must still detect — the
+    /// tracker's frozen frame clock must not wedge the pipeline.
+    /// Silence/resume are pushed in full-window chunks so each phase is
+    /// exactly one run (mixed windows would pass the RMS gate and
+    /// consume extra scripted detections).
+    #[test]
+    fn sustained_silence_releases_then_recovers() {
+        // Window 1 (first_frame=0): onset + sustained activation → NoteOn
+        let w1 = {
+            let mut pr = silent_frames(0, 150);
+            pr.onset[3 * 88 + 40] = true;
+            for f in 3..150 {
+                pr.frame[f * 88 + 40] = 0.9;
+            }
+            pr
+        };
+        // Resume window: 3 full-window pushes later the window start is
+        // (96000-24000)/160 = frame 450; onset at global 460 → local 10.
+        let w_resume = {
+            let mut pr = silent_frames(450, 150);
+            pr.onset[10 * 88 + 40] = true;
+            for f in 10..150 {
+                pr.frame[f * 88 + 40] = 0.9;
+            }
+            pr
+        };
+        let mut p = mk_pipeline(vec![w1, w_resume]);
+
+        let ev = p.push(&vec![0.01_f32; WINDOW_SAMPLES]);
+        assert_eq!(ev, vec![MicEvent::NoteOn { key: 21 + 40 }]);
+
+        // First fully-silent window: gate trips, first_frame(150) has
+        // slid past the frontier(138) → force-release.
+        let ev2 = p.push(&vec![0.0_f32; WINDOW_SAMPLES]);
+        assert_eq!(ev2, vec![MicEvent::NoteOff { key: 21 + 40 }]);
+
+        // Continued silence: nothing sounding, nothing detected.
+        let ev3 = p.push(&vec![0.0_f32; WINDOW_SAMPLES]);
+        assert!(ev3.is_empty());
+
+        // Sound resumes: fresh onset must still fire (frozen-clock
+        // wedge regression).
+        let ev4 = p.push(&vec![0.01_f32; WINDOW_SAMPLES]);
+        assert_eq!(ev4, vec![MicEvent::NoteOn { key: 21 + 40 }]);
+    }
+
+    /// A single push larger than the hop size runs inference once and
+    /// keeps the frontier gap-free (pins the single-run semantics).
+    #[test]
+    fn multi_hop_burst_runs_once_and_stays_monotonic() {
+        let w1 = {
+            let mut pr = silent_frames(0, 150);
+            pr.onset[3 * 88 + 40] = true;
+            for f in 3..150 {
+                pr.frame[f * 88 + 40] = 0.9;
+            }
+            pr
+        };
+        // The burst run's window: one 4800-sample push slides the
+        // window start to 4800 → first_frame = 30. Feed [138, 168):
+        // 30 silent frames, so the held note's release window (20
+        // frames) elapses mid-range → exactly one NoteOff.
+        let w2 = silent_frames(30, 150);
+        let mut p = mk_pipeline(vec![w1, w2]);
+
+        let ev = p.push(&vec![0.01_f32; WINDOW_SAMPLES]);
+        assert_eq!(ev, vec![MicEvent::NoteOn { key: 21 + 40 }]);
+
+        // A 5-hop burst triggers exactly one run — the single scripted
+        // window is consumed and none remain.
+        let ev2 = p.push(&vec![0.01_f32; 5 * HOP_SAMPLES]);
+        assert_eq!(ev2, vec![MicEvent::NoteOff { key: 21 + 40 }]);
+        assert!(
+            p.detector.scripted.is_empty(),
+            "burst must consume exactly one scripted window"
+        );
     }
 }
