@@ -2,9 +2,6 @@
 //! its output (synth or MIDI out). Mic-detected onsets matching these
 //! pitches are suppressed (design §6, MIDI-side echo suppression).
 
-// Wired into Context in task 3.3; remove this attribute then.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};

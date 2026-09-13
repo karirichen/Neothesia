@@ -99,6 +99,7 @@ impl PlayingScene {
             song,
             keyboard_layout.range.clone(),
             ctx.config.separate_channels(),
+            ctx.sounding.clone(),
         );
         waterfall.update(player.time_without_lead_in());
 
@@ -336,11 +337,11 @@ impl Scene for PlayingScene {
     fn midi_event(
         &mut self,
         _ctx: &mut Context,
-        _source: InputSource,
+        source: InputSource,
         channel: u8,
         message: &MidiMessage,
     ) {
-        self.player.user_midi_event(channel, message);
+        self.player.user_midi_event(channel, message, source);
         self.keyboard.user_midi_event(message);
     }
 }

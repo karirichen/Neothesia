@@ -259,15 +259,33 @@ impl Scene for FreeplayScene {
     fn midi_event(
         &mut self,
         ctx: &mut Context,
-        _source: InputSource,
+        source: InputSource,
         channel: u8,
         message: &MidiMessage,
     ) {
         self.recorder.push_event(channel, *message);
         self.keyboard.user_midi_event(message);
-        ctx.output_manager
-            .connection()
-            .midi_event(channel.into(), *message);
+
+        // Mic source is not forwarded: the real piano is the sound
+        // source; a synth follow-along would create echo.
+        if source != InputSource::Mic {
+            match message {
+                MidiMessage::NoteOn { key, .. } => {
+                    if let Ok(mut t) = ctx.sounding.lock() {
+                        t.note_on(key.as_int());
+                    }
+                }
+                MidiMessage::NoteOff { key, .. } => {
+                    if let Ok(mut t) = ctx.sounding.lock() {
+                        t.note_off(key.as_int());
+                    }
+                }
+                _ => {}
+            }
+            ctx.output_manager
+                .connection()
+                .midi_event(channel.into(), *message);
+        }
 
         if let MidiMessage::NoteOn { .. } = message {
             let start = self.keyboard.layout().range.start();

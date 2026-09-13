@@ -21,6 +21,9 @@ pub struct Context {
     pub quad_renderer_factory: QuadRendererFactory,
 
     pub output_manager: OutputManager,
+    /// Pitches the game itself is sounding; used to suppress
+    /// mic-detected ghost notes (echo suppression, design §6).
+    pub sounding: std::sync::Arc<crate::sounding_tracker::SharedSoundingTracker>,
     pub input_manager: InputManager,
     pub config: Config,
 
@@ -67,6 +70,7 @@ impl Context {
             quad_renderer_factory,
 
             output_manager: Default::default(),
+            sounding: crate::sounding_tracker::shared(),
             input_manager: InputManager::new(proxy.clone()),
             config,
             proxy,
