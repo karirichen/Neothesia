@@ -7,6 +7,14 @@ use crate::{
 
 type InputDescriptor = midi_io::MidiInputPort;
 
+#[derive(Debug, Clone, Default)]
+pub enum MicSetupState {
+    #[default]
+    Idle,
+    Downloading,
+    Failed(String),
+}
+
 pub struct UiState {
     pub outputs: Vec<OutputDescriptor>,
     pub selected_output: Option<OutputDescriptor>,
@@ -19,6 +27,8 @@ pub struct UiState {
     pub song: Option<Song>,
 
     pub range_detection: RangeDetection,
+
+    pub mic_setup: MicSetupState,
 
     page_stack: VecDeque<Page>,
 }
@@ -38,6 +48,7 @@ impl UiState {
 
             page_stack,
             range_detection: RangeDetection::default(),
+            mic_setup: MicSetupState::default(),
         }
     }
 

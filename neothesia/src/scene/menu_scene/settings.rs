@@ -9,6 +9,7 @@ use nuon::TextJustify;
 use piano_layout::Key;
 
 use super::UiState;
+use super::state::MicSetupState;
 
 #[derive(Default, Debug, Clone)]
 pub enum RangeDetection {
@@ -135,6 +136,12 @@ impl super::MenuScene {
                     .width(body_w)
                     .build(ui, |ui, rows, spacer| {
                         self.settings_input_section(ctx, ui, rows, spacer);
+                    });
+
+                nuon::settings_section("Microphone Input")
+                    .width(body_w)
+                    .build(ui, |ui, rows, spacer| {
+                        self.settings_mic_section(ctx, ui, rows, spacer);
                     });
 
                 nuon::settings_section("Note Range")
@@ -421,6 +428,108 @@ impl super::MenuScene {
             .title("Input")
             .body(|ui, row_w, row_h| self.settings_input_picker(ui, ctx, row_w, row_h))
             .build(ui, rows);
+    }
+
+    fn settings_mic_section(
+        &mut self,
+        ctx: &mut Context,
+        ui: &mut nuon::Ui,
+        rows: &dyn Fn(&mut nuon::Ui, nuon::SettingsRow<'_>),
+        spacer: &dyn Fn(&mut nuon::Ui),
+    ) {
+        let enabled = ctx.config.mic_enabled();
+
+        match &self.state.mic_setup {
+            MicSetupState::Downloading => {
+                nuon::settings_row()
+                    .title("Microphone")
+                    .subtitle("Downloading pitch model...")
+                    .build(ui, rows);
+                return; // no toggling while downloading
+            }
+            MicSetupState::Failed(msg) => {
+                nuon::settings_row()
+                    .title("Microphone")
+                    .subtitle(format!("Error: {msg}"))
+                    .build(ui, rows);
+            }
+            _ => {}
+        }
+
+        if nuon::settings_row_toggler()
+            .title("Enable Microphone Input")
+            .subtitle("Detect played notes via mic (acoustic pianos)")
+            .value(enabled)
+            .build(ui, rows)
+        {
+            let target = !enabled;
+            ctx.config.set_mic_enabled(target);
+            if target {
+                self.state.mic_setup = MicSetupState::Downloading;
+                let fut = async move { audio_input::model_store::ensure_model() };
+                let task = on_async(fut, |result, data, ctx| match result {
+                    Ok(path) => match ctx.connect_audio_input(&path) {
+                        Ok(()) => data.mic_setup = MicSetupState::Idle,
+                        Err(e) => {
+                            ctx.config.set_mic_enabled(false);
+                            data.mic_setup = MicSetupState::Failed(e);
+                        }
+                    },
+                    Err(e) => {
+                        ctx.config.set_mic_enabled(false);
+                        data.mic_setup = MicSetupState::Failed(e.to_string());
+                    }
+                });
+                self.futures.push(task);
+            } else {
+                ctx.disconnect_audio_input();
+                self.state.mic_setup = MicSetupState::Idle;
+            }
+        }
+
+        spacer(ui);
+
+        let devices: Vec<String> = audio_input::AudioInputManager::devices()
+            .into_iter()
+            .map(|d| d.0)
+            .collect();
+
+        if devices.is_empty() {
+            nuon::settings_row()
+                .title("Device")
+                .subtitle("No microphone found — check Privacy & Security > Microphone")
+                .build(ui, rows);
+        } else {
+            let current = ctx
+                .config
+                .mic_device()
+                .map(str::to_owned)
+                .unwrap_or_else(|| devices[0].clone());
+            let spin = nuon::settings_row_spin()
+                .title("Device")
+                .subtitle(current.clone())
+                .id("mic-device")
+                .build(ui, rows);
+
+            let idx = devices.iter().position(|d| d == &current).unwrap_or(0);
+            let next = |dir: i32| {
+                let n = devices.len() as i32;
+                let ni = ((idx as i32 + dir + n) % n) as usize;
+                devices[ni].clone()
+            };
+
+            let picked = match spin {
+                nuon::SettingsRowSpinResult::Plus => Some(next(1)),
+                nuon::SettingsRowSpinResult::Minus => Some(next(-1)),
+                nuon::SettingsRowSpinResult::Idle => None,
+            };
+            if let Some(d) = picked {
+                ctx.config.set_mic_device(Some(d));
+                if ctx.config.mic_enabled() {
+                    let _ = ctx.connect_audio_input(&audio_input::model_store::model_path());
+                }
+            }
+        }
     }
 
     fn settings_calibrate_row(

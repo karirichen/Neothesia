@@ -100,11 +100,15 @@ impl Context {
     pub fn connect_audio_input(&mut self, model_path: &std::path::Path) -> Result<(), String> {
         self.audio_input = None; // drop the old connection
 
-        // Phase 4: prefer config.mic_device() when set
-        let device_name = audio_input::AudioInputManager::devices()
-            .first()
-            .cloned()
-            .map(|d| d.0);
+        let device_name = match self.config.mic_device() {
+            Some(name) => Some(name.to_owned()),
+            // Phase 5 validates device choice on real hardware;
+            // first-enumerated may be an aggregate on macOS.
+            None => audio_input::AudioInputManager::devices()
+                .first()
+                .cloned()
+                .map(|d| d.0),
+        };
 
         let Some(device_name) = device_name else {
             return Err("no microphone devices found".into());

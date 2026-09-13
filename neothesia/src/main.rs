@@ -52,6 +52,8 @@ pub enum NeothesiaEvent {
         message: MidiMessage,
     },
     Exit,
+    /// Microphone input background failure (device loss, inference panic).
+    MicInputError(String),
 }
 
 struct Neothesia {
@@ -69,6 +71,15 @@ impl Neothesia {
 
         context.resize();
         context.gpu.submit();
+
+        // No automatic download at startup — the user enables once via
+        // settings; restore only if the model is already cached.
+        if context.config.mic_enabled() && audio_input::model_store::model_path().exists() {
+            if let Err(e) = context.connect_audio_input(&audio_input::model_store::model_path()) {
+                log::warn!("mic input restore failed: {e}");
+                context.config.set_mic_enabled(false);
+            }
+        }
 
         Self {
             context,
@@ -187,6 +198,13 @@ impl Neothesia {
             }
             NeothesiaEvent::Exit => {
                 event_loop.exit();
+            }
+            NeothesiaEvent::MicInputError(msg) => {
+                log::error!("microphone input failed: {msg}");
+                // v1: log-only per design §9/appendix; the connection is
+                // dead — drop it so the settings toggle reflects reality.
+                self.context.audio_input = None;
+                self.context.config.set_mic_enabled(false);
             }
         }
     }
@@ -438,10 +456,7 @@ fn mic_event_to_neothesia(event: audio_input::MicEvent) -> Option<NeothesiaEvent
                 vel: 0.into(),
             },
         }),
-        audio_input::MicEvent::Error(msg) => {
-            log::error!("audio input error: {msg}");
-            None
-        }
+        audio_input::MicEvent::Error(msg) => Some(NeothesiaEvent::MicInputError(msg.to_string())),
     }
 }
 
