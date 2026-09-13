@@ -84,19 +84,7 @@ impl MidiPlayer {
             };
             match config.player {
                 PlayerConfig::Auto => {
-                    match event.message {
-                        MidiMessage::NoteOn { key, .. } => {
-                            if let Ok(mut t) = self.sounding.lock() {
-                                t.note_on(key.as_int());
-                            }
-                        }
-                        MidiMessage::NoteOff { key, .. } => {
-                            if let Ok(mut t) = self.sounding.lock() {
-                                t.note_off(key.as_int());
-                            }
-                        }
-                        _ => {}
-                    }
+                    self.sounding.track_midi_event(&event.message);
                     self.output // TODO: Send to multiple outputs
                         .midi_event(u4::new(channel), event.message);
                 }
@@ -120,6 +108,10 @@ impl MidiPlayer {
 
     fn clear(&mut self) {
         self.output.stop_all();
+        // Whatever was sounding is now silenced; mark everything
+        // released so no pitch stays `On` in the echo-suppression
+        // tracker forever (pause/seek/scene-exit paths land here).
+        self.sounding.all_off();
     }
 }
 
@@ -243,19 +235,7 @@ impl MidiPlayer {
             return;
         }
 
-        match message {
-            MidiMessage::NoteOn { key, .. } => {
-                if let Ok(mut t) = self.sounding.lock() {
-                    t.note_on(key.as_int());
-                }
-            }
-            MidiMessage::NoteOff { key, .. } => {
-                if let Ok(mut t) = self.sounding.lock() {
-                    t.note_off(key.as_int());
-                }
-            }
-            _ => {}
-        }
+        self.sounding.track_midi_event(message);
         self.output.midi_event(u4::new(channel), *message);
         self.play_along.midi_event(MidiEventSource::User, message);
     }

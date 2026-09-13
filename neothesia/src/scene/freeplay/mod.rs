@@ -269,19 +269,7 @@ impl Scene for FreeplayScene {
         // Mic source is not forwarded: the real piano is the sound
         // source; a synth follow-along would create echo.
         if source != InputSource::Mic {
-            match message {
-                MidiMessage::NoteOn { key, .. } => {
-                    if let Ok(mut t) = ctx.sounding.lock() {
-                        t.note_on(key.as_int());
-                    }
-                }
-                MidiMessage::NoteOff { key, .. } => {
-                    if let Ok(mut t) = ctx.sounding.lock() {
-                        t.note_off(key.as_int());
-                    }
-                }
-                _ => {}
-            }
+            ctx.sounding.track_midi_event(message);
             ctx.output_manager
                 .connection()
                 .midi_event(channel.into(), *message);

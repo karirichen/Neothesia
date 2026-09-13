@@ -217,3 +217,4 @@ Velocity: fixed at 100 in v1; the model's velocity output is a future enhancemen
 | Clean stop exits the inference loop silently | Clean stop emits `all_notes_off` before thread exit | Review found settings-toggle-off mid-note would leave keys highlighted forever |
 | Crate exposes only `AudioInputManager` | All modules are `pub mod` + lib re-exports | Phase 4 needs `model_store` and constants; internal coherence is unaffected |
 | SPSC capacity ~3s | 4s (capture.rs) | Margin for 20ms-poll jitter; drop-oldest backstop unchanged |
+| Mic events recorded in FreePlay are previewed through the synth | Intentional | A recording captures what the player played; preview playback synthesizing it is the same semantics as MIDI-keyboard recordings |
