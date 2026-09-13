@@ -6,9 +6,14 @@
 pub mod buffer;
 pub mod capture;
 pub mod detector;
+pub mod manager;
 pub mod pipeline;
 pub mod resample;
 pub mod tracker;
+
+pub use capture::MicDevice;
+pub use manager::{AudioInputConnection, AudioInputError, AudioInputManager};
+pub use tracker::MicEvent;
 
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 

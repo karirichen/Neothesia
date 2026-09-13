@@ -1,0 +1,135 @@
+//! Public API of the crate (design §5): enumerate mic devices,
+//! connect, and receive note events on a background thread —
+//! mirroring `midi_io`'s shape.
+
+use std::sync::Arc;
+use std::time::Duration;
+
+use crate::buffer::SampleBuffer;
+use crate::capture::{self, MicDevice};
+use crate::detector::rten_backend::RtenDetector;
+use crate::pipeline::StreamingPipeline;
+use crate::tracker::{MicEvent, TrackerConfig};
+
+#[derive(Debug, thiserror::Error)]
+pub enum AudioInputError {
+    #[error(transparent)]
+    Capture(#[from] capture::CaptureError),
+    #[error("pitch detector failed to load: {0}")]
+    Detector(String),
+}
+
+pub struct AudioInputConnection {
+    pub device: MicDevice,
+    /// Set to true on drop; the inference thread exits its loop.
+    stop: Arc<std::sync::atomic::AtomicBool>,
+    _stream: capture::CaptureStream,
+}
+
+impl Drop for AudioInputConnection {
+    fn drop(&mut self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+pub struct AudioInputManager;
+
+impl AudioInputManager {
+    pub fn devices() -> Vec<MicDevice> {
+        capture::devices()
+    }
+
+    /// Connect to `device`, run the streaming pipeline on a background
+    /// thread, deliver events via `on_event`. `model_path` must point
+    /// to a valid .rten model file.
+    pub fn connect<F>(
+        device: &MicDevice,
+        model_path: &std::path::Path,
+        mut on_event: F,
+    ) -> Result<AudioInputConnection, AudioInputError>
+    where
+        F: FnMut(MicEvent) + Send + 'static,
+    {
+        let stream = capture::connect(device)?;
+        let detector =
+            RtenDetector::load(model_path).map_err(|e| AudioInputError::Detector(e.to_string()))?;
+
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let stop2 = stop.clone();
+
+        let buffer: Arc<SampleBuffer> = stream.buffer.clone();
+        let source_rate = stream.sample_rate;
+        let capture_error = stream.error.clone();
+
+        std::thread::Builder::new()
+            .name("audio-input-inference".into())
+            .spawn(move || {
+                let mut resampler = crate::resample::ResampleStage::new(source_rate);
+                let mut pipeline = StreamingPipeline::new(detector, TrackerConfig::default());
+                let (tx, rx) = std::sync::mpsc::channel::<MicEvent>();
+
+                // event relay: user callback runs off the inference thread
+                std::thread::spawn(move || {
+                    while let Ok(ev) = rx.recv() {
+                        on_event(ev);
+                    }
+                });
+
+                while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_millis(20));
+
+                    // device-level error (hot-unplug etc.): notify +
+                    // force-release all notes + exit
+                    if capture_error.load(std::sync::atomic::Ordering::Relaxed) {
+                        for ev in pipeline.all_notes_off() {
+                            let _ = tx.send(ev);
+                        }
+                        let _ = tx.send(MicEvent::Error("input stream error (device lost?)"));
+                        break;
+                    }
+
+                    let raw = buffer.drain();
+                    if raw.is_empty() {
+                        continue;
+                    }
+
+                    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        let resampled = resampler.process(&raw);
+                        pipeline.push(&resampled)
+                    }));
+
+                    match result {
+                        Ok(events) => {
+                            for ev in events {
+                                let _ = tx.send(ev);
+                            }
+                        }
+                        Err(payload) => {
+                            // Downcast the panic payload for diagnosability
+                            // (e.g. model shape mismatches surface here).
+                            let msg = payload
+                                .downcast_ref::<&str>()
+                                .map(|s| (*s).to_string())
+                                .or_else(|| payload.downcast_ref::<String>().cloned())
+                                .unwrap_or_else(|| "unknown panic".to_string());
+                            log::error!("audio-input inference panicked: {msg}");
+                            let _ = tx.send(MicEvent::Error("inference thread panicked"));
+                            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                for ev in pipeline.all_notes_off() {
+                                    let _ = tx.send(ev);
+                                }
+                            }));
+                            break;
+                        }
+                    }
+                }
+            })
+            .expect("failed to spawn audio-input thread");
+
+        Ok(AudioInputConnection {
+            device: device.clone(),
+            stop,
+            _stream: stream,
+        })
+    }
+}
