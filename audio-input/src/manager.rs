@@ -68,12 +68,20 @@ impl AudioInputManager {
                 let mut pipeline = StreamingPipeline::new(detector, TrackerConfig::default());
                 let (tx, rx) = std::sync::mpsc::channel::<MicEvent>();
 
-                // event relay: user callback runs off the inference thread
-                std::thread::spawn(move || {
-                    while let Ok(ev) = rx.recv() {
-                        on_event(ev);
-                    }
-                });
+                // Event relay: the user callback runs off the inference
+                // thread. After the connection is dropped, the inference
+                // thread may still deliver events for up to ~60ms (one
+                // poll cycle) before `tx` drops — consumers must treat
+                // late events as harmless (e.g. EventLoopProxy send errors
+                // are ignorable).
+                std::thread::Builder::new()
+                    .name("audio-input-relay".into())
+                    .spawn(move || {
+                        while let Ok(ev) = rx.recv() {
+                            on_event(ev);
+                        }
+                    })
+                    .expect("failed to spawn audio-input relay thread");
 
                 while !stop2.load(std::sync::atomic::Ordering::Relaxed) {
                     std::thread::sleep(Duration::from_millis(20));
@@ -123,6 +131,14 @@ impl AudioInputManager {
                         }
                     }
                 }
+
+                // Clean stop (connection dropped): release anything
+                // still sounding so no key stays highlighted forever.
+                let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    for ev in pipeline.all_notes_off() {
+                        let _ = tx.send(ev);
+                    }
+                }));
             })
             .expect("failed to spawn audio-input thread");
 

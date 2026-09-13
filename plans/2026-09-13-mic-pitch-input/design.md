@@ -214,3 +214,6 @@ Velocity: fixed at 100 in v1; the model's velocity output is a future enhancemen
 | Hot-unplug toast notification | log + MicEvent::Error event (v1 logs only) | No global toast infrastructure in v1; the Error event already enters the event stream; UI treatment is future work |
 | `devices()` filters via `name().ok()` | warn + empty Vec on enumeration error (connect still propagates) | cpal 0.18 removed `name()`; enumeration failure is non-fatal for the picker UI |
 | Pipeline feeds per-window trusted range `first_frame..first_frame+trusted_end` | Monotonic trusted frontier `[last_trusted_end, new_trusted_end)` + tracker monotonicity assert | Review found overlap re-feed underflows `global_f - onset_frame` (usize wrap → silent note loss in release builds) |
+| Clean stop exits the inference loop silently | Clean stop emits `all_notes_off` before thread exit | Review found settings-toggle-off mid-note would leave keys highlighted forever |
+| Crate exposes only `AudioInputManager` | All modules are `pub mod` + lib re-exports | Phase 4 needs `model_store` and constants; internal coherence is unaffected |
+| SPSC capacity ~3s | 4s (capture.rs) | Margin for 20ms-poll jitter; drop-oldest backstop unchanged |

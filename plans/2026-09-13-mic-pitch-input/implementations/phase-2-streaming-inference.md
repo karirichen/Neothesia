@@ -1,6 +1,6 @@
 # Phase 2: Streaming Inference + NoteTracker — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Implement the sliding-window streaming inference pipeline: 16kHz window → PitchDetector → NoteTracker diffing → MicEvent stream, including the replaceable-backend seam and mock-based tests.
 
@@ -24,7 +24,7 @@
 - Create: `audio-input/src/detector.rs`
 - Modify: `audio-input/src/lib.rs` (add `pub mod detector;`)
 
-- [ ] **Step 1: Types and trait**
+- [x] **Step 1: Types and trait**
 
 `audio-input/src/detector.rs`:
 
@@ -91,12 +91,12 @@ pub fn silent_frames(first_frame: usize, frames: usize) -> FrameProbabilities {
 }
 ```
 
-- [ ] **Step 2: Compile check**
+- [x] **Step 2: Compile check**
 
 Run: `cargo check -p audio-input`
 Expected: passes.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add audio-input
@@ -111,7 +111,7 @@ git commit -m "feat(audio-input): PitchDetector trait and frame probability type
 - Create: `audio-input/src/tracker.rs`
 - Modify: `audio-input/src/lib.rs` (add `pub mod tracker;`)
 
-- [ ] **Step 1: Write the failing tests together with the implementation**
+- [x] **Step 1: Write the failing tests together with the implementation**
 
 `audio-input/src/tracker.rs`:
 
@@ -252,7 +252,7 @@ impl NoteTracker {
 }
 ```
 
-- [ ] **Step 2: Unit tests**
+- [x] **Step 2: Unit tests**
 
 Append to `tracker.rs`:
 
@@ -374,12 +374,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
 
 Run: `cargo test -p audio-input`
 Expected: all pass (6 tracker tests + existing tests).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add audio-input
@@ -394,7 +394,7 @@ git commit -m "feat(audio-input): streaming note tracker state machine"
 - Modify: `audio-input/src/detector.rs` (append implementation)
 - Modify: `neothesia-ai/src/transcription.rs` (expose threshold constants)
 
-- [ ] **Step 1: Add threshold constants to neothesia-ai**
+- [x] **Step 1: Add threshold constants to neothesia-ai**
 
 Top of `neothesia-ai/src/transcription.rs`:
 
@@ -405,7 +405,7 @@ pub const FRAME_THRESHOLD: f32 = 0.1;
 
 (Replace the literal `0.3`/`0.1` in main.rs with these constants — behavior unchanged.)
 
-- [ ] **Step 2: RtenDetector implementation**
+- [x] **Step 2: RtenDetector implementation**
 
 Append to `audio-input/src/detector.rs`:
 
@@ -486,7 +486,7 @@ pub const HOP_SAMPLES: usize = 960;       // 60ms
 pub const TRUST_MARGIN_FRAMES: usize = 12; // 120ms
 ```
 
-- [ ] **Step 3: Model smoke test (#[ignore], requires a local model file)**
+- [x] **Step 3: Model smoke test (#[ignore], requires a local model file)**
 
 Append to `detector.rs`:
 
@@ -519,7 +519,7 @@ Expected: passes if the model file is available; otherwise skip this step (manda
 
 **Note:** The first run must verify the model accepts variable-length `[1, 24000]` input. If `run_n` reports a shape error, fall back to: zero-pad the window to `SEGMENT_SAMPLES` (10s), run inference, take the first 150 output frames (frame 0 aligned to window start). This fallback increases per-run inference time (expected still within ~150ms on M3 Max); widen the hop to 120ms accordingly and record it in the design doc appendix.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add audio-input neothesia-ai
@@ -534,7 +534,7 @@ git commit -m "feat(audio-input): rten pitch detector backend"
 - Create: `audio-input/src/pipeline.rs`
 - Modify: `audio-input/src/lib.rs` (add `pub mod pipeline;`)
 
-- [ ] **Step 1: Implementation**
+- [x] **Step 1: Implementation**
 
 ```rust
 use std::collections::VecDeque;
@@ -638,7 +638,7 @@ impl<D: PitchDetector> StreamingPipeline<D> {
 }
 ```
 
-- [ ] **Step 2: End-to-end frame accounting test with MockDetector**
+- [x] **Step 2: End-to-end frame accounting test with MockDetector**
 
 Append to `pipeline.rs`:
 
@@ -730,12 +730,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
 
 Run: `cargo test -p audio-input`
 Expected: all pass. Frame arithmetic reference for `untrusted_margin_frames_are_deferred`: the window start sample is `total_samples - WINDOW_SAMPLES` (NOT `WINDOW_SAMPLES - HOP_SAMPLES` — the window is anchored at its start, and each hop of 960 samples slides that start by 960). After the first full window `total=24000` → start 0 → `first_frame=0`; after one hop `total=24960` → start 960 → `first_frame=6`; after two hops `first_frame=12`. The trusted frontier advances monotonically ([0,138), [138,144), [144,150)), so every frame is fed exactly once and the onset at global frame 145 first becomes trusted in window 3 (local index `145 - 12 = 133`). If the assertion fails, recompute each window's `first_frame` and local onset index with this formula — the test's semantics stay: a margin frame is deferred until its window's trusted range covers it.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add audio-input
@@ -750,7 +750,7 @@ git commit -m "feat(audio-input): streaming inference pipeline with trust bounda
 - Create: `audio-input/src/manager.rs`
 - Modify: `audio-input/src/lib.rs` (add `pub mod manager;` + re-exports)
 
-- [ ] **Step 1: Implementation**
+- [x] **Step 1: Implementation**
 
 `audio-input/src/manager.rs`:
 
@@ -881,7 +881,7 @@ impl AudioInputManager {
 }
 ```
 
-- [ ] **Step 2: Final lib.rs re-exports**
+- [x] **Step 2: Final lib.rs re-exports**
 
 `audio-input/src/lib.rs` final shape:
 
@@ -905,12 +905,12 @@ pub const HOP_SAMPLES: usize = 960;
 pub const TRUST_MARGIN_FRAMES: usize = 12;
 ```
 
-- [ ] **Step 3: Compile + full tests**
+- [x] **Step 3: Compile + full tests**
 
 Run: `cargo test -p audio-input && cargo check -p audio-input --examples`
 Expected: all pass.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add audio-input
