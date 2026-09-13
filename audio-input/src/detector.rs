@@ -165,11 +165,12 @@ mod rten_tests {
 
     #[test]
     fn load_nonexistent_path_fails() {
-        let err = RtenDetector::load(std::path::Path::new(
+        match RtenDetector::load(std::path::Path::new(
             "/nonexistent/definitely-no-model-here.rten",
-        ))
-        .expect_err("load must fail for a nonexistent path");
-        assert!(!err.to_string().is_empty());
+        )) {
+            Err(e) => assert!(!e.to_string().is_empty()),
+            Ok(_) => panic!("load must fail for a nonexistent path"),
+        }
     }
 
     #[test]
