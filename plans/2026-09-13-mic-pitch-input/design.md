@@ -201,3 +201,14 @@ Velocity: fixed at 100 in v1; the model's velocity output is a future enhancemen
    no synth forwarding)
 4. Phase 4: settings UI + config persistence + model downloader
 5. Phase 5: offline accuracy regression + latency tuning + platform permissions/packaging
+
+## Appendix A: Implementation deviations
+
+| Design as written | Implemented as | Reason |
+|---|---|---|
+| Lock-free ring buffer | Mutex<VecDeque> SPSC semantics | Write side locks once per ~20ms, read side once per 60ms — negligible contention; avoids ringbuf API version risk |
+| hop 64ms | hop 60ms (960 samples = 6 frames) | Sits on the 10ms frame grid, avoiding fractional-frame accounting |
+| Download progress bar | Status text "Downloading..." | on_async is a single completion callback; streaming progress needs extra plumbing — YAGNI |
+| Streaming onset detection | Simple threshold (>0.3) initially | The offline path's monotonic-neighbour refinement is deferred to the tuning stage (see Phase 5 Task 5.2 parameter log) |
+| Accuracy regression via test.mid rendered through the synth | Synthetic piano-ish harmonic sines (5.2) | Regression works without a soundfont rendering pipeline; the synth-rendered version is a future enhancement |
+| Hot-unplug toast notification | log + MicEvent::Error event (v1 logs only) | No global toast infrastructure in v1; the Error event already enters the event stream; UI treatment is future work |
