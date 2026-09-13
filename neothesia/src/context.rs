@@ -10,6 +10,16 @@ use winit::event_loop::EventLoopProxy;
 
 use winit::window::Window;
 
+/// Microphone setup flow state; lives on Context so background
+/// threads can drive it via events, independent of menu lifetime.
+#[derive(Debug, Clone, Default)]
+pub enum MicSetupState {
+    #[default]
+    Idle,
+    Downloading,
+    Failed(String),
+}
+
 pub struct Context {
     pub window: Arc<Window>,
 
@@ -27,6 +37,8 @@ pub struct Context {
     /// Pitches the game itself is sounding; used to suppress
     /// mic-detected ghost notes (echo suppression, design §6).
     pub sounding: std::sync::Arc<crate::sounding_tracker::SharedSoundingTracker>,
+    /// Mic settings-flow state (download/connect progress).
+    pub mic_setup: MicSetupState,
     pub input_manager: InputManager,
     pub config: Config,
 
@@ -75,6 +87,7 @@ impl Context {
             output_manager: Default::default(),
             audio_input: None,
             sounding: crate::sounding_tracker::shared(),
+            mic_setup: MicSetupState::Idle,
             input_manager: InputManager::new(proxy.clone()),
             config,
             proxy,

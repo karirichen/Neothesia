@@ -54,6 +54,8 @@ pub enum NeothesiaEvent {
     Exit,
     /// Microphone input background failure (device loss, inference panic).
     MicInputError(String),
+    /// Result of the background model download (settings flow).
+    MicModelReady(Result<std::path::PathBuf, String>),
 }
 
 struct Neothesia {
@@ -206,6 +208,20 @@ impl Neothesia {
                 self.context.audio_input = None;
                 self.context.config.set_mic_enabled(false);
             }
+            NeothesiaEvent::MicModelReady(result) => match result {
+                Ok(path) => match self.context.connect_audio_input(&path) {
+                    Ok(()) => self.context.mic_setup = crate::context::MicSetupState::Idle,
+                    Err(e) => {
+                        self.context.config.set_mic_enabled(false);
+                        self.context.mic_setup = crate::context::MicSetupState::Failed(e);
+                    }
+                },
+                Err(e) => {
+                    log::error!("pitch model download failed: {e}");
+                    self.context.config.set_mic_enabled(false);
+                    self.context.mic_setup = crate::context::MicSetupState::Failed(e);
+                }
+            },
         }
     }
 
