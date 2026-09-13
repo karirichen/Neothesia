@@ -1,0 +1,13 @@
+[package]
+name = "audio-input"
+description = "Microphone audio input with polyphonic pitch detection for Neothesia"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+log.workspace = true
+thiserror.workspace = true
+cpal.workspace = true
+rubato.workspace = true
+neothesia-ai.workspace = true
+rten.workspace = true

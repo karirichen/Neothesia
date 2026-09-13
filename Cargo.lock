@@ -213,6 +213,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f93ebbf82d06013f4c41fe71303feb980cddd78496d904d06be627972de51a24"
 
 [[package]]
+name = "audio-input"
+version = "0.1.0"
+dependencies = [
+ "cpal",
+ "log",
+ "neothesia-ai",
+ "rten",
+ "rubato 0.16.2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "audioadapter"
 version = "4.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -889,7 +901,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e3505607cc0adc388ce98f59707477c02fbd05a2fa0c1b8c4cf42b71a3cb9c34"
 dependencies = [
  "audioadapter-buffers",
- "rubato",
+ "rubato 4.0.0",
 ]
 
 [[package]]
@@ -2768,6 +2780,18 @@ checksum = "9574ddebf5671bc08ceb76e2e1638fadc57fdeff318634eab2c29e9a803cff64"
 dependencies = [
  "rten-base",
  "rten-simd",
+]
+
+[[package]]
+name = "rubato"
+version = "0.16.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5258099699851cfd0082aeb645feb9c084d9a5e1f1b8d5372086b989fc5e56a1"
+dependencies = [
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "realfft",
 ]
 
 [[package]]
