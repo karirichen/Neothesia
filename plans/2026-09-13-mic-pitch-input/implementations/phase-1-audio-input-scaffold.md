@@ -1,6 +1,6 @@
 # Phase 1: neothesia-ai Library Extraction + audio-input Crate Scaffold — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Extract neothesia-ai's inference core into a reusable library and build the audio-input crate's capture/buffer/resampling infrastructure (no model inference yet).
 
@@ -19,7 +19,7 @@
 - Create: `neothesia-ai/src/transcription.rs`
 - Modify: `neothesia-ai/src/main.rs`
 
-- [ ] **Step 1: Create lib.rs and move reusable functions into a public module**
+- [x] **Step 1: Create lib.rs and move reusable functions into a public module**
 
 `neothesia-ai/src/lib.rs`:
 
@@ -52,7 +52,7 @@ Create `neothesia-ai/src/transcription.rs` containing (moved verbatim from the c
 
 Module-level imports: use `crate::FRAMES_PER_SECOND;` directly. Remove the `println!` line inside `note_detection_with_onset_offset_regress` (libraries must not print).
 
-- [ ] **Step 2: Shrink main.rs into a thin shell**
+- [x] **Step 2: Shrink main.rs into a thin shell**
 
 `neothesia-ai/src/main.rs` keeps `mod args; mod audio;` and `fn main` with an unchanged body, adding at the top:
 
@@ -62,7 +62,7 @@ use neothesia_ai::{SEGMENT_SAMPLES, deframe, enframe, get_binarized_output_from_
 
 If `audio.rs` still resolves `crate::{SAMPLE_RATE, SEGMENT_SAMPLES}` inside the same bin crate it keeps working as-is; if compilation fails, switch it to `use neothesia_ai::{...}` too.
 
-- [ ] **Step 3: Write the failing tests (lock binarization behavior)**
+- [x] **Step 3: Write the failing tests (lock binarization behavior)**
 
 Append to `neothesia-ai/src/transcription.rs`:
 
@@ -99,17 +99,17 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: Run the tests**
+- [x] **Step 4: Run the tests**
 
 Run: `cargo test -p neothesia-ai`
 Expected: 2 passed (note: with neighbour=1 the valid n range is 1..4, which the test data satisfies).
 
-- [ ] **Step 5: Confirm the CLI still works**
+- [x] **Step 5: Confirm the CLI still works**
 
 Run: `cargo check -p neothesia-ai --bin neothesia-ai`
 Expected: compiles without unused-import warnings.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add neothesia-ai
@@ -125,7 +125,7 @@ git commit -m "refactor(neothesia-ai): extract transcription core into library"
 - Create: `audio-input/src/lib.rs`
 - Modify: `Cargo.toml` (workspace root)
 
-- [ ] **Step 1: Register in the workspace**
+- [x] **Step 1: Register in the workspace**
 
 Add `"audio-input"` to the `members` array of the root `Cargo.toml`; add to `[workspace.dependencies]`:
 
@@ -138,7 +138,7 @@ rten = "0.24"
 
 (`neothesia-ai` and `rten` are not workspace deps yet and are needed by audio-input later.)
 
-- [ ] **Step 2: Crate manifest**
+- [x] **Step 2: Crate manifest**
 
 `audio-input/Cargo.toml`:
 
@@ -158,7 +158,7 @@ neothesia-ai.workspace = true
 rten.workspace = true
 ```
 
-- [ ] **Step 3: Minimal lib.rs**
+- [x] **Step 3: Minimal lib.rs**
 
 `audio-input/src/lib.rs`:
 
@@ -173,12 +173,12 @@ pub const TARGET_SAMPLE_RATE: u32 = 16_000;
 
 (The `buffer` / `resample` module declarations are added by their own tasks — Task 1.3 / Task 1.4 — to keep each step self-contained.)
 
-- [ ] **Step 4: Verify compilation**
+- [x] **Step 4: Verify compilation**
 
 Run: `cargo check -p audio-input`
 Expected: passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add Cargo.toml Cargo.lock audio-input
@@ -195,7 +195,7 @@ git commit -m "feat(audio-input): scaffold workspace crate"
 
 Note: the design doc says "lock-free ring buffer". Implementation decision (recorded in the design doc appendix): a `Mutex<VecDeque<f32>>` with bounded SPSC semantics — the write side locks once per callback (~10-20ms), the read side once per 60ms hop, so lock contention is negligible; this avoids ringbuf third-party API risk. On overflow the oldest samples are dropped (design §5).
 
-- [ ] **Step 1: Write the failing tests together with the implementation**
+- [x] **Step 1: Write the failing tests together with the implementation**
 
 `audio-input/src/buffer.rs`:
 
@@ -287,12 +287,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run the tests**
+- [x] **Step 2: Run the tests**
 
 Run: `cargo test -p audio-input`
 Expected: 3 passed.
 
-- [ ] **Step 3: Expose the module and commit**
+- [x] **Step 3: Expose the module and commit**
 
 Add `pub mod buffer;` to `lib.rs`, then:
 
@@ -309,7 +309,7 @@ git commit -m "feat(audio-input): bounded sample buffer with drop-oldest overflo
 - Create: `audio-input/src/resample.rs`
 - Modify: `audio-input/src/lib.rs` (add `pub mod resample;`)
 
-- [ ] **Step 1: Write the failing tests together with the implementation**
+- [x] **Step 1: Write the failing tests together with the implementation**
 
 `audio-input/src/resample.rs`:
 
@@ -436,12 +436,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run the tests**
+- [x] **Step 2: Run the tests**
 
 Run: `cargo test -p audio-input`
 Expected: all pass (including Task 1.3's 3). If rubato call names differ (version drift), fix the call sites per the 0.16 docs — but **do not change test semantics**.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add audio-input Cargo.lock
@@ -457,7 +457,7 @@ git commit -m "feat(audio-input): incremental sinc resampler to 16kHz mono"
 - Create: `audio-input/examples/mic_list.rs`
 - Modify: `audio-input/src/lib.rs` (add `pub mod capture;`)
 
-- [ ] **Step 1: Implement the capture module**
+- [x] **Step 1: Implement the capture module**
 
 `audio-input/src/capture.rs`:
 
@@ -591,7 +591,7 @@ fn push_mono(buf: &SampleBuffer, interleaved: &[f32], channels: usize) {
 }
 ```
 
-- [ ] **Step 2: examples/mic_list.rs (manual smoke tool)**
+- [x] **Step 2: examples/mic_list.rs (manual smoke tool)**
 
 ```rust
 fn main() {
@@ -602,14 +602,24 @@ fn main() {
 }
 ```
 
-- [ ] **Step 3: Compile + manual smoke test**
+- [x] **Step 3: Compile + manual smoke test**
 
 Run: `cargo run -p audio-input --example mic_list`
 Expected: lists the machine's input devices (on macOS the first run may trigger a permission prompt; a bare terminal example without Info.plist may be denied outright — either allow it in System Settings or treat compile-only success as sufficient for this step).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add audio-input
 git commit -m "feat(audio-input): mic device enumeration and capture stream"
 ```
+
+---
+
+## Phase 1 completion record
+
+- Task 1.1 — commit ca25082 (+ fmt 19303b6): verbatim move verified; println/labels removed; float-cast fixes
+- Task 1.2 — commit 88b456c: rten already existed in workspace deps (plan text was wrong), duplicate correctly skipped
+- Task 1.3 — commits 2e3ef35, c551872: poisoning-tolerant locks + zero-capacity guard added post-review
+- Task 1.4 — commits 8dfe7c3, c225451: rubato 0.16.2 API matched verbatim; 44.1kHz + output-length tests added post-review
+- Task 1.5 — commits ee700b2, dffc47c: cpal 0.18.1 adaptations (Display for names, Result input_devices, StreamConfig by value, per-arm error closures); push_mono tests
