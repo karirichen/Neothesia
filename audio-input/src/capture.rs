@@ -133,3 +133,34 @@ fn push_mono(buf: &SampleBuffer, interleaved: &[f32], channels: usize) {
         .collect();
     buf.push(&mono);
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::buffer::SampleBuffer;
+
+    #[test]
+    fn mono_passthrough() {
+        let b = SampleBuffer::new(16);
+        push_mono(&b, &[0.1, 0.2, 0.3], 1);
+        assert_eq!(b.drain(), vec![0.1, 0.2, 0.3]);
+    }
+
+    #[test]
+    fn stereo_average() {
+        let b = SampleBuffer::new(16);
+        push_mono(&b, &[0.0, 0.4, 1.0, 0.2], 2);
+        assert_eq!(b.drain(), vec![0.2, 0.6]);
+    }
+
+    #[test]
+    fn trailing_partial_frame_averages_by_channel_count() {
+        // A trailing frame with fewer samples than channels divides by
+        // the full channel count (attenuated, never panics) — pinned
+        // deliberately: cpal delivers complete interleaved frames, so
+        // this documents the degradation path only.
+        let b = SampleBuffer::new(16);
+        push_mono(&b, &[0.0, 0.4, 1.0], 2);
+        assert_eq!(b.drain(), vec![0.2, 0.5]); // 1.0 / 2
+    }
+}

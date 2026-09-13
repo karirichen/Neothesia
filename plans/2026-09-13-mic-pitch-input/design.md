@@ -212,3 +212,4 @@ Velocity: fixed at 100 in v1; the model's velocity output is a future enhancemen
 | Streaming onset detection | Simple threshold (>0.3) initially | The offline path's monotonic-neighbour refinement is deferred to the tuning stage (see Phase 5 Task 5.2 parameter log) |
 | Accuracy regression via test.mid rendered through the synth | Synthetic piano-ish harmonic sines (5.2) | Regression works without a soundfont rendering pipeline; the synth-rendered version is a future enhancement |
 | Hot-unplug toast notification | log + MicEvent::Error event (v1 logs only) | No global toast infrastructure in v1; the Error event already enters the event stream; UI treatment is future work |
+| `devices()` filters via `name().ok()` | warn + empty Vec on enumeration error (connect still propagates) | cpal 0.18 removed `name()`; enumeration failure is non-fatal for the picker UI |
