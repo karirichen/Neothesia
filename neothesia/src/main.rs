@@ -6,6 +6,7 @@ mod input_manager;
 mod output_manager;
 mod scene;
 mod song;
+mod sounding_tracker;
 mod utils;
 
 use std::{sync::Arc, time::Duration};
