@@ -5,6 +5,7 @@
 
 pub mod buffer;
 pub mod capture;
+pub mod detector;
 pub mod resample;
 
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
