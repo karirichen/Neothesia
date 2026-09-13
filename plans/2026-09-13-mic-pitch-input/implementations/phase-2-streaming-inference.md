@@ -557,6 +557,12 @@ pub struct StreamingPipeline<D: PitchDetector> {
     total_samples: usize,
     /// 16kHz samples consumed at last inference run.
     last_run_sample: usize,
+    /// Global frame index one past the last frame fed to the tracker.
+    /// Trusted ranges are fed monotonically from here — never re-feed a
+    /// frame, never start a range before the current window (the tracker
+    /// asserts monotonicity; overlapping re-feeds underflow its frame
+    /// arithmetic).
+    last_trusted_end: usize,
 }
 
 impl<D: PitchDetector> StreamingPipeline<D> {
@@ -567,6 +573,7 @@ impl<D: PitchDetector> StreamingPipeline<D> {
             history: VecDeque::with_capacity(WINDOW_SAMPLES),
             total_samples: 0,
             last_run_sample: 0,
+            last_trusted_end: 0,
         }
     }
 
@@ -611,10 +618,18 @@ impl<D: PitchDetector> StreamingPipeline<D> {
         let probs: FrameProbabilities =
             self.detector.detect(&window, first_frame);
 
+        // Feed only NEW trusted frames: a monotonic frontier
+        // [last_trusted_end, new_trusted_end) clamped to this window.
         let window_frames = WINDOW_SAMPLES / SAMPLES_PER_FRAME;
-        let trusted_end = window_frames - TRUST_MARGIN_FRAMES;
-        self.tracker
-            .process(first_frame, first_frame + trusted_end, &probs)
+        let new_trusted_end = first_frame + window_frames - TRUST_MARGIN_FRAMES;
+        let feed_start = self.last_trusted_end.max(first_frame);
+        let events = if new_trusted_end > feed_start {
+            self.last_trusted_end = new_trusted_end;
+            self.tracker.process(feed_start, new_trusted_end, &probs)
+        } else {
+            Vec::new()
+        };
+        events
     }
 
     pub fn all_notes_off(&mut self) -> Vec<MicEvent> {
@@ -662,28 +677,41 @@ mod tests {
 
     #[test]
     fn untrusted_margin_frames_are_deferred() {
-        // onset appears at frame 145 (>= 150-12=138) → must not trigger this window
+        // onset appears at global frame 145 (>= 150-12=138) → must not
+        // trigger in window 1. Each hop advances the window start by
+        // HOP_SAMPLES=960 → first_frame by 6 frames, so:
+        //   w1: first_frame=0,  onset local 145; trusted feed [0,138)
+        //   w2: first_frame=6,  onset local 139; trusted feed [138,144)
+        //   w3: first_frame=12, onset local 133; trusted feed [144,150)
+        // The onset first becomes trusted in window 3 (local 133 ∈ [132,138)).
         let w1 = {
             let mut pr = silent_frames(0, 150);
             pr.onset[145 * 88 + 40] = true;
             pr.frame[145 * 88 + 40] = 0.9;
             pr
         };
-        // next window: starts at sample 23040 → first_frame = 144;
-        // the onset frame becomes local frame 1 (trusted)
         let w2 = {
-            let mut pr = silent_frames(144, 150);
-            pr.onset[1 * 88 + 40] = true;
-            pr.frame[1 * 88 + 40] = 0.9;
+            let mut pr = silent_frames(6, 150);
+            pr.onset[139 * 88 + 40] = true;
+            pr.frame[139 * 88 + 40] = 0.9;
             pr
         };
-        let mut p = mk_pipeline(vec![w1, w2]);
+        let w3 = {
+            let mut pr = silent_frames(12, 150);
+            pr.onset[133 * 88 + 40] = true;
+            pr.frame[133 * 88 + 40] = 0.9;
+            pr
+        };
+        let mut p = mk_pipeline(vec![w1, w2, w3]);
 
         let noise = vec![0.01_f32; WINDOW_SAMPLES];
         assert!(p.push(&noise).is_empty(), "margin frames must not trigger early");
 
         let noise2 = vec![0.01_f32; HOP_SAMPLES];
-        let ev = p.push(&noise2);
+        assert!(p.push(&noise2).is_empty(), "still untrusted in window 2");
+
+        let noise3 = vec![0.01_f32; HOP_SAMPLES];
+        let ev = p.push(&noise3);
         assert_eq!(ev, vec![MicEvent::NoteOn { key: 21 + 40 }]);
     }
 
@@ -705,7 +733,7 @@ mod tests {
 - [ ] **Step 3: Run the tests**
 
 Run: `cargo test -p audio-input`
-Expected: all pass. Double-check the frame arithmetic in `untrusted_margin_frames_are_deferred`: hop of 960 samples = 6 frames; the second window's start is sample 23040 → `first_frame = 144`; the onset's local frame is `145 - 144 = 1`. If the assertion fails, recompute w2's `first_frame` and local onset index with this formula — the test's semantics stay: a margin frame is deferred to the next window.
+Expected: all pass. Frame arithmetic reference for `untrusted_margin_frames_are_deferred`: the window start sample is `total_samples - WINDOW_SAMPLES` (NOT `WINDOW_SAMPLES - HOP_SAMPLES` — the window is anchored at its start, and each hop of 960 samples slides that start by 960). After the first full window `total=24000` → start 0 → `first_frame=0`; after one hop `total=24960` → start 960 → `first_frame=6`; after two hops `first_frame=12`. The trusted frontier advances monotonically ([0,138), [138,144), [144,150)), so every frame is fed exactly once and the onset at global frame 145 first becomes trusted in window 3 (local index `145 - 12 = 133`). If the assertion fails, recompute each window's `first_frame` and local onset index with this formula — the test's semantics stay: a margin frame is deferred until its window's trusted range covers it.
 
 - [ ] **Step 4: Commit**
 

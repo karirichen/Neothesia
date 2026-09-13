@@ -46,9 +46,21 @@ struct PitchState {
     below_since: Option<usize>,
 }
 
+impl PitchState {
+    /// Transition to not-sounding, returning the `NoteOff` event.
+    fn force_off(&mut self, key: u8) -> MicEvent {
+        self.sounding = false;
+        self.below_since = None;
+        MicEvent::NoteOff { key }
+    }
+}
+
 pub struct NoteTracker {
     cfg: TrackerConfig,
     states: [PitchState; KEY_COUNT],
+    /// Global frame index one past the last frame ever fed to `process()`;
+    /// trusted ranges must advance monotonically from here.
+    last_fed_end: usize,
 }
 
 impl NoteTracker {
@@ -56,11 +68,33 @@ impl NoteTracker {
         Self {
             cfg,
             states: std::array::from_fn(|_| PitchState::default()),
+            last_fed_end: 0,
         }
     }
 
     /// Feed the newly-trusted frame range [start, end) of `probs`
     /// (which must contain those frames). Returns emitted events.
+    ///
+    /// # Contract
+    ///
+    /// The range must lie inside the window (`start >= probs.first_frame`)
+    /// and must never re-feed consumed frames: successive calls advance
+    /// monotonically (`start >= last_fed_end`). Re-feeding overlapping
+    /// ranges corrupts the per-pitch frame arithmetic.
+    ///
+    /// # Event ordering and reference points
+    ///
+    /// Events are frame-major, pitch-ascending: everything triggered by an
+    /// earlier frame precedes anything from a later one, and within a frame
+    /// lower pitches emit first. A same-pitch retrigger emits its `NoteOff`
+    /// before the new `NoteOn`.
+    ///
+    /// The two onset arms gate on different reference points: opening a
+    /// note checks `last_onset_seen` (any onset seen for the pitch — even
+    /// one absorbed while it already sounded — extends the suppression
+    /// window), while the retrigger arm checks `onset_frame` (the strike
+    /// that opened the current note must be at least
+    /// `onset_cooldown_frames` old).
     pub fn process(
         &mut self,
         start: usize,
@@ -68,6 +102,16 @@ impl NoteTracker {
         probs: &FrameProbabilities,
     ) -> Vec<MicEvent> {
         assert!(end > start, "empty trusted range");
+        assert!(
+            start >= self.last_fed_end,
+            "non-monotonic trusted range: start {start} < last fed end {}",
+            self.last_fed_end
+        );
+        assert!(
+            start >= probs.first_frame,
+            "trusted range starts before window: {start} < {}",
+            probs.first_frame
+        );
         let local_start = start - probs.first_frame;
         let local_end = end - probs.first_frame;
         assert!(local_end <= probs.frames, "trusted range outside window");
@@ -113,9 +157,7 @@ impl NoteTracker {
                 if probs.frame_at(f, p) < self.cfg.frame_release_threshold {
                     let since = *st.below_since.get_or_insert(global_f);
                     if global_f - since >= self.cfg.release_frames {
-                        st.sounding = false;
-                        st.below_since = None;
-                        events.push(MicEvent::NoteOff { key: key_of(p) });
+                        events.push(st.force_off(key_of(p)));
                         continue;
                     }
                 } else {
@@ -124,13 +166,12 @@ impl NoteTracker {
 
                 // hard lifetime cutoff (reverb insurance)
                 if global_f - st.onset_frame >= self.cfg.max_note_frames {
-                    st.sounding = false;
-                    st.below_since = None;
-                    events.push(MicEvent::NoteOff { key: key_of(p) });
+                    events.push(st.force_off(key_of(p)));
                 }
             }
         }
 
+        self.last_fed_end = end;
         events
     }
 
@@ -139,11 +180,7 @@ impl NoteTracker {
         let mut events = Vec::new();
         for (p, st) in self.states.iter_mut().enumerate() {
             if st.sounding {
-                st.sounding = false;
-                st.below_since = None;
-                events.push(MicEvent::NoteOff {
-                    key: FIRST_MIDI_KEY + p as u8,
-                });
+                events.push(st.force_off(FIRST_MIDI_KEY + p as u8));
             }
         }
         events
@@ -264,11 +301,8 @@ mod tests {
         let mut t = NoteTracker::new(Default::default());
         let pr = window_with(0, 5, &[(1, 10, 0.9, true), (1, 50, 0.9, true)]);
         t.process(0, 5, &pr);
-        let mut ev = t.all_notes_off();
-        ev.sort_by_key(|e| match e {
-            MicEvent::NoteOn { key } | MicEvent::NoteOff { key } => *key,
-            MicEvent::Error(_) => 0,
-        });
+        // natural order is pitch-ascending: pitch 10 before pitch 50
+        let ev = t.all_notes_off();
         assert_eq!(
             ev,
             vec![
@@ -276,5 +310,119 @@ mod tests {
                 MicEvent::NoteOff { key: 21 + 50 },
             ]
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "non-monotonic")]
+    fn duplicate_range_feeding_is_idempotent() {
+        let mut t = NoteTracker::new(Default::default());
+        let pr = window_with(0, 10, &[(0, 30, 0.9, true)]);
+        let _ = t.process(0, 10, &pr);
+        // re-feeding the same range must trip the monotonicity assert
+        let _ = t.process(0, 10, &pr);
+    }
+
+    #[test]
+    #[should_panic(expected = "non-monotonic")]
+    fn refeed_of_prefix_is_rejected() {
+        let mut t = NoteTracker::new(Default::default());
+        let pr = window_with(0, 10, &[(0, 30, 0.9, true)]);
+        let _ = t.process(0, 10, &pr);
+        // a range starting inside already-consumed frames is equally invalid
+        let pr2 = window_with(5, 10, &[]);
+        let _ = t.process(5, 15, &pr2);
+    }
+
+    #[test]
+    fn retrigger_while_release_pending_reopens() {
+        let mut t = NoteTracker::new(Default::default());
+        // onset@0; frames 1..9 silent → below_since=1 pending
+        let w1 = window_with(0, 10, &[(0, 30, 0.9, true)]);
+        let ev1 = t.process(0, 10, &w1);
+
+        // frames 10..20 below threshold: release still pending (fires at 21)
+        let specs2: Vec<_> = (10..20).map(|f| (f, 30, 0.05, false)).collect();
+        let w2 = window_with(10, 10, &specs2);
+        let ev2 = t.process(10, 20, &w2);
+
+        // activation recovers 20..25, then onset@26: 26 - onset_frame(0) = 26
+        // ≥ cooldown 25 → retrigger arm closes + reopens and clears
+        // below_since. Frames 27..46 stay silent: a stale below_since=1
+        // would fire NoteOff at frame 27 (27-1 ≥ 20); the cleared state
+        // only would at 27+20=47, outside the fed range.
+        let mut specs3: Vec<_> = (20..26).map(|f| (f, 30, 0.8, false)).collect();
+        specs3.push((26, 30, 0.9, true));
+        for f in 27..47 {
+            specs3.push((f, 30, 0.0, false));
+        }
+        let w3 = window_with(20, 27, &specs3);
+        let ev3 = t.process(20, 47, &w3);
+
+        assert_eq!(ev1, vec![MicEvent::NoteOn { key: 21 + 30 }]);
+        assert!(ev2.is_empty());
+        assert_eq!(
+            ev3,
+            vec![
+                MicEvent::NoteOff { key: 21 + 30 },
+                MicEvent::NoteOn { key: 21 + 30 },
+            ]
+        );
+    }
+
+    #[test]
+    fn onset_and_activation_at_release_frame_note_survives() {
+        let mut t = NoteTracker::new(Default::default());
+        // onset@0; frames 1..9 silent → below_since=1, release due at 21
+        let w1 = window_with(0, 10, &[(0, 30, 0.9, true)]);
+        let ev1 = t.process(0, 10, &w1);
+
+        // frames 10..20 silent; at frame 21 an onset fires (frame prob
+        // still 0.0 there): the onset branch runs first and `continue`s,
+        // so the release check at 21 never executes; frame 22's recovered
+        // activation clears below_since → no NoteOff at all.
+        let mut specs2: Vec<_> = (10..21).map(|f| (f, 30, 0.0, false)).collect();
+        specs2.push((21, 30, 0.0, true));
+        for f in 22..24 {
+            specs2.push((f, 30, 0.9, false));
+        }
+        let w2 = window_with(10, 14, &specs2);
+        let ev2 = t.process(10, 24, &w2);
+
+        assert_eq!(ev1, vec![MicEvent::NoteOn { key: 21 + 30 }]);
+        assert!(ev2.is_empty());
+    }
+
+    #[test]
+    fn brief_dip_recovery_across_window_survives() {
+        let mut t = NoteTracker::new(Default::default());
+        // window 1: activation only at frame 0 → below_since=1 afterwards
+        let w1 = window_with(0, 10, &[(0, 30, 0.9, true)]);
+        let ev1 = t.process(0, 10, &w1);
+
+        // window 2: dip continues 10..15, recovers 15..25 → below_since
+        // cleared at 15; release (due at 21) never fires
+        let mut specs2: Vec<_> = (10..15).map(|f| (f, 30, 0.05, false)).collect();
+        specs2.extend((15..25).map(|f| (f, 30, 0.8, false)));
+        let w2 = window_with(10, 15, &specs2);
+        let ev2 = t.process(10, 25, &w2);
+
+        assert_eq!(ev1, vec![MicEvent::NoteOn { key: 21 + 30 }]);
+        assert!(ev2.is_empty());
+    }
+
+    #[test]
+    fn release_fires_exactly_at_frame_21() {
+        let mut t = NoteTracker::new(Default::default());
+        // onset@0, silence from frame 1 → below_since=1, due at 1+20=21
+        let mut specs1 = vec![(0, 30, 0.9, true)];
+        specs1.extend((1..21).map(|f| (f, 30, 0.0, false)));
+        let w1 = window_with(0, 21, &specs1);
+        let ev1 = t.process(0, 21, &w1);
+
+        let w2 = window_with(21, 1, &[(21, 30, 0.0, false)]);
+        let ev2 = t.process(21, 22, &w2);
+
+        assert_eq!(ev1, vec![MicEvent::NoteOn { key: 21 + 30 }]);
+        assert_eq!(ev2, vec![MicEvent::NoteOff { key: 21 + 30 }]);
     }
 }
