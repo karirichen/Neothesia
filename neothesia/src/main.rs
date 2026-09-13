@@ -27,6 +27,15 @@ use winit::{
 
 use crate::utils::window::WinitEvent;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputSource {
+    #[default]
+    Midi,
+    Keyboard,
+    Mouse,
+    Mic,
+}
+
 #[derive(Debug)]
 pub enum NeothesiaEvent {
     /// Go to playing scene
@@ -35,6 +44,7 @@ pub enum NeothesiaEvent {
     /// Go to main menu scene
     MainMenu(Option<song::Song>),
     MidiInput {
+        source: InputSource,
         /// The MIDI channel that this message is associated with.
         channel: u8,
         /// The MIDI message type and associated data.
@@ -156,9 +166,13 @@ impl Neothesia {
                 let to = menu_scene::MenuScene::new(&mut self.context, song);
                 self.game_scene = Box::new(to);
             }
-            NeothesiaEvent::MidiInput { channel, message } => {
+            NeothesiaEvent::MidiInput {
+                source,
+                channel,
+                message,
+            } => {
                 self.game_scene
-                    .midi_event(&mut self.context, channel, &message);
+                    .midi_event(&mut self.context, source, channel, &message);
             }
             NeothesiaEvent::Exit => {
                 event_loop.exit();

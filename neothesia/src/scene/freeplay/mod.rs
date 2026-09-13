@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::{
-    NeothesiaEvent,
+    InputSource, NeothesiaEvent,
     context::Context,
     scene::{
         MouseToMidiEventState, NuonRenderer, Scene,
@@ -256,7 +256,13 @@ impl Scene for FreeplayScene {
         );
     }
 
-    fn midi_event(&mut self, ctx: &mut Context, channel: u8, message: &MidiMessage) {
+    fn midi_event(
+        &mut self,
+        ctx: &mut Context,
+        _source: InputSource,
+        channel: u8,
+        message: &MidiMessage,
+    ) {
         self.recorder.push_event(channel, *message);
         self.keyboard.user_midi_event(message);
         ctx.output_manager

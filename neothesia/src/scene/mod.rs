@@ -3,7 +3,8 @@ pub mod menu_scene;
 pub mod playing_scene;
 
 use crate::{
-    NeothesiaEvent, context::Context, scene::playing_scene::Keyboard, utils::window::WinitEvent,
+    InputSource, NeothesiaEvent, context::Context, scene::playing_scene::Keyboard,
+    utils::window::WinitEvent,
 };
 use midi_file::midly::MidiMessage;
 use neothesia_core::render::{Image, ImageIdentifier, ImageRenderer, QuadRenderer, TextRenderer};
@@ -18,7 +19,14 @@ pub trait Scene {
     fn update(&mut self, ctx: &mut Context, delta: Duration);
     fn render<'pass>(&'pass mut self, rpass: &mut wgpu_jumpstart::RenderPass<'pass>);
     fn window_event(&mut self, _ctx: &mut Context, _event: &WindowEvent) {}
-    fn midi_event(&mut self, _ctx: &mut Context, _channel: u8, _message: &MidiMessage) {}
+    fn midi_event(
+        &mut self,
+        _ctx: &mut Context,
+        _source: InputSource,
+        _channel: u8,
+        _message: &MidiMessage,
+    ) {
+    }
 }
 
 pub fn handle_pc_keyboard_to_midi_event(ctx: &mut Context, event: &WindowEvent) {
@@ -94,6 +102,7 @@ pub fn handle_pc_keyboard_to_midi_event(ctx: &mut Context, event: &WindowEvent) 
     };
     ctx.proxy
         .send_event(NeothesiaEvent::MidiInput {
+            source: crate::InputSource::Keyboard,
             channel: 0,
             message,
         })
@@ -128,6 +137,7 @@ fn handle_mouse_to_midi_event(
         };
         ctx.proxy
             .send_event(NeothesiaEvent::MidiInput {
+                source: crate::InputSource::Mouse,
                 channel: 0,
                 message,
             })
@@ -182,6 +192,7 @@ fn handle_mouse_to_midi_event(
         };
         ctx.proxy
             .send_event(NeothesiaEvent::MidiInput {
+                source: crate::InputSource::Mouse,
                 channel: 0,
                 message,
             })

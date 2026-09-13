@@ -21,7 +21,7 @@ use winit::{
     keyboard::{Key, NamedKey},
 };
 
-use crate::{NeothesiaEvent, context::Context, icons, scene::Scene, song::Song};
+use crate::{InputSource, NeothesiaEvent, context::Context, icons, scene::Scene, song::Song};
 use midi_file::midly::MidiMessage;
 
 use super::NuonRenderer;
@@ -415,7 +415,13 @@ impl Scene for MenuScene {
         }
     }
 
-    fn midi_event(&mut self, ctx: &mut Context, channel: u8, message: &MidiMessage) {
+    fn midi_event(
+        &mut self,
+        ctx: &mut Context,
+        _source: InputSource,
+        channel: u8,
+        message: &MidiMessage,
+    ) {
         match message {
             MidiMessage::NoteOn { key, .. } => {
                 self.midi_input_state.note_on(key.as_int());

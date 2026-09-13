@@ -12,8 +12,8 @@ use self::top_bar::TopBar;
 
 use super::{NuonRenderer, Scene};
 use crate::{
-    NeothesiaEvent, context::Context, render::WaterfallRenderer, scene::MouseToMidiEventState,
-    song::Song, utils::window::WinitEvent,
+    InputSource, NeothesiaEvent, context::Context, render::WaterfallRenderer,
+    scene::MouseToMidiEventState, song::Song, utils::window::WinitEvent,
 };
 
 mod keyboard;
@@ -333,7 +333,13 @@ impl Scene for PlayingScene {
         super::handle_nuon_window_event(&mut self.nuon, event, ctx);
     }
 
-    fn midi_event(&mut self, _ctx: &mut Context, channel: u8, message: &MidiMessage) {
+    fn midi_event(
+        &mut self,
+        _ctx: &mut Context,
+        _source: InputSource,
+        channel: u8,
+        message: &MidiMessage,
+    ) {
         self.player.user_midi_event(channel, message);
         self.keyboard.user_midi_event(message);
     }
