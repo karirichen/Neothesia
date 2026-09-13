@@ -100,7 +100,37 @@ mod tests {
         for chunk in input.chunks(777) {
             out.extend(stage.process(chunk));
         }
+        // output length must track the ratio: ~3s * 16kHz within 1%
+        // (catches dropped chunks and gross ratio drift)
+        let expected = (TARGET_SAMPLE_RATE as f32 * 3.0) as usize;
+        assert!(
+            (out.len() as i64 - expected as i64).abs() < expected as i64 / 100,
+            "output length {} drifted from ~{expected}",
+            out.len()
+        );
         // trim 0.25s head/tail to skip boundary effects
+        let skip = TARGET_SAMPLE_RATE as usize / 4;
+        let core = &out[skip..out.len() - skip];
+        let f = dominant_freq(core, TARGET_SAMPLE_RATE);
+        assert!((f - 440.0).abs() < 2.0, "frequency drifted: {f} Hz");
+    }
+
+    /// 44.1kHz is the other dominant real mic rate (fractional
+    /// 2.75625 ratio — exercises fractional-index stepping).
+    #[test]
+    fn preserves_440hz_from_441k() {
+        let mut stage = ResampleStage::new(44_100);
+        let input = sine(440.0, 44_100, 3.0);
+        let mut out = Vec::new();
+        for chunk in input.chunks(777) {
+            out.extend(stage.process(chunk));
+        }
+        let expected = (TARGET_SAMPLE_RATE as f32 * 3.0) as usize;
+        assert!(
+            (out.len() as i64 - expected as i64).abs() < expected as i64 / 100,
+            "output length {} drifted from ~{expected}",
+            out.len()
+        );
         let skip = TARGET_SAMPLE_RATE as usize / 4;
         let core = &out[skip..out.len() - skip];
         let f = dominant_freq(core, TARGET_SAMPLE_RATE);
