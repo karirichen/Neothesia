@@ -21,6 +21,11 @@ Arch Linux (**Unofficial AUR** built from source, maintained by @zayn7lie): <htt
 - Extract
 - Right click + open
 
+#### Microphone permission
+
+- The app bundle declares `NSMicrophoneUsageDescription`, so macOS prompts for microphone access on first use — click **Allow**.
+- If you run the bare binary (no `.app` bundle, e.g. from a terminal), the permission belongs to the parent app: grant it via **System Settings > Privacy & Security > Microphone** (for a terminal, enable it and restart the terminal).
+
 ### On Windows/Linux
 
 - Extract and double click
