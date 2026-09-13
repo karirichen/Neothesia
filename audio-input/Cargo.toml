@@ -12,3 +12,6 @@ rubato.workspace = true
 neothesia-ai.workspace = true
 rten.workspace = true
 rten-tensor.workspace = true
+ureq.workspace = true
+sha2.workspace = true
+dirs.workspace = true

@@ -89,3 +89,6 @@ symphonium = { version = "0.12", features = ["mp3"] }
 
 # audio-input deps
 rubato = "0.16"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+sha2 = "0.10"
+dirs = "6"
