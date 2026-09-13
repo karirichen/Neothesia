@@ -2,7 +2,10 @@ use ndarray::{Array2, Array3, ArrayView2};
 use rten::{NodeId, ValueOrView};
 use rten_tensor::{prelude::*, *};
 
-use neothesia_ai::{SEGMENT_SAMPLES, deframe, enframe, get_binarized_output_from_regression, note_detection_with_onset_offset_regress};
+use neothesia_ai::{
+    SEGMENT_SAMPLES, deframe, enframe, get_binarized_output_from_regression,
+    note_detection_with_onset_offset_regress,
+};
 
 mod args;
 mod audio;

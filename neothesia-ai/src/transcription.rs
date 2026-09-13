@@ -336,11 +336,13 @@ mod tests {
             data[[i, 0]] = v;
         }
 
-        let (binary, _shift) =
-            get_binarized_output_from_regression(&data.view(), 0.3, 1);
+        let (binary, _shift) = get_binarized_output_from_regression(&data.view(), 0.3, 1);
 
         assert!(binary[[2, 0]], "peak frame must be flagged as onset");
-        assert!(!binary[[0, 0]] && !binary[[4, 0]], "edge frames must not be flagged");
+        assert!(
+            !binary[[0, 0]] && !binary[[4, 0]],
+            "edge frames must not be flagged"
+        );
     }
 
     #[test]
