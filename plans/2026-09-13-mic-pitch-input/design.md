@@ -230,3 +230,7 @@ Velocity: fixed at 100 in v1; the model's velocity output is a future enhancemen
 - [ ] Speaker accompaniment vs. headphones: with speakers, the accompaniment produces no ghost highlights
 - [ ] Guidance prompt appears after microphone permission denial (bare-terminal run: grant the parent terminal in System Settings)
 - [ ] After unplugging/disabling the microphone, the error is logged and the connection thread exits; re-enabling the toggle in settings recovers (toast UI in a later version)
+| Config keys `audio_input.enabled/device` | `mic.enabled/device` | Section name matches the sibling config sections' domain naming |
+| Latency regression asserts p95 < 250ms | p95 < 400ms | First-window construction adds up to 1s apparent latency for early onsets; steady-state (probe at 2.0s) is what the budget governs; real budget validation is Phase 5 on-hardware tuning |
+| Info.plist + entitlement | Info.plist only | CI builds are unsigned; a notarized/hardened-runtime build would additionally need the audio-input entitlement — tracked for whenever signing lands |
+| Suppression validated against accompaniment+noise mix (§10) | Manual checklist item only | The automated counterpart needs a synth-rendered mix harness — future enhancement (same family as the sines-vs-synth-render deviation) |

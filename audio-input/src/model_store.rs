@@ -43,7 +43,15 @@ pub fn ensure_model() -> Result<PathBuf, ModelStoreError> {
         std::fs::remove_file(&path)?;
     }
 
-    let response = ureq::get(MODEL_URL)
+    // Every outbound call gets a timeout: a stalled TCP connection
+    // must not wedge MicSetupState::Downloading forever.
+    let agent = ureq::AgentBuilder::new()
+        .timeout_connect(std::time::Duration::from_secs(10))
+        .timeout(std::time::Duration::from_secs(300))
+        .build();
+
+    let response = agent
+        .get(MODEL_URL)
         .call()
         .map_err(|e| ModelStoreError::Download(e.to_string()))?;
 

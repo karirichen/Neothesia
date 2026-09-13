@@ -6,11 +6,11 @@
 > keep the `&Path` parameter. Also prefer the host default input device over `devices().first()`
 > when no config device is set (macOS first-enumerated is often an aggregate).
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Microphone section on the settings page (toggle + device selection), config persistence, first-use model download and caching.
 
-**Architecture:** The config follows the existing `V1 struct + enum wrapper + #[serde(default)]` pattern with a new `mic` section; the downloader lives in the audio-input crate (`model_store`); the UI uses nuon's existing `settings_row_toggler`/`settings_row_spin` patterns with the async download going through the existing `on_async` + `MenuScene::futures` mechanism.
+**Architecture:** The config follows the existing `V1 struct + enum wrapper + #[serde(default)]` pattern with a new `mic` section; the downloader lives in the audio-input crate (`model_store`); the UI uses nuon's existing `settings_row_toggler`/`settings_row_spin` patterns with the download running on a dedicated std::thread delivering `NeothesiaEvent::MicModelReady` (the futures mechanism froze the UI — fixed in 98ff59c).
 
 **Tech Stack:** nuon UI, ureq 2 (blocking HTTP), sha2, dirs, existing ron config.
 
@@ -24,7 +24,7 @@
 - Modify: `neothesia-core/src/config/model.rs`
 - Modify: `neothesia-core/src/config/mod.rs`
 
-- [ ] **Step 1: Add the types to model.rs**
+- [x] **Step 1: Add the types to model.rs**
 
 Append after the `PcKeyboardConfig` definitions (keeping the file's existing style):
 
@@ -58,7 +58,7 @@ The top-level `Model` (model.rs:7) gains:
 
 (`Model` carries `deny_unknown_fields`; `#[serde(default)]` guarantees configs without a `mic` key still parse.)
 
-- [ ] **Step 2: Accessors in mod.rs**
+- [x] **Step 2: Accessors in mod.rs**
 
 Next to `set_separate_channels`/`separate_channels` (around config/mod.rs:127-132), append:
 
@@ -82,12 +82,12 @@ Next to `set_separate_channels`/`separate_channels` (around config/mod.rs:127-13
 
 Note: mod.rs stores the model's fields unpacked (e.g. `devices: DevicesConfigV1`, unpacked from the enum around mod.rs:73/97). If `mic` needs the same unpacking, add an internal `mic: MicConfigV1` field plus the unpack line `mic: match model.mic { MicConfig::V1(v) => v }` and the repack `MicConfig::V1(self.mic.clone())` — follow the on-site structure; the goal is: the accessors compile and old ron config files load without errors.
 
-- [ ] **Step 3: Regression**
+- [x] **Step 3: Regression**
 
 Run: `cargo test -p neothesia-core`
 Expected: existing tests pass (nothing broken). If a config roundtrip test exists, run it.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add neothesia-core
@@ -103,7 +103,7 @@ git commit -m "feat(config): mic input settings section"
 - Modify: `audio-input/src/lib.rs` (add `pub mod model_store;`)
 - Modify: `audio-input/Cargo.toml`, root `Cargo.toml`
 
-- [ ] **Step 1: Dependencies**
+- [x] **Step 1: Dependencies**
 
 Add to the root `[workspace.dependencies]`:
 
@@ -121,7 +121,7 @@ sha2.workspace = true
 dirs.workspace = true
 ```
 
-- [ ] **Step 2: Implementation**
+- [x] **Step 2: Implementation**
 
 `audio-input/src/model_store.rs`:
 
@@ -237,12 +237,12 @@ mod tests {
 
 The `REPLACE_WITH_ACTUAL_SHA256_AT_RELEASE` value in `MODEL_SHA256` is a **deliberate placeholder with a dedicated backfill task** (Phase 5 Task 5.1: upload the model → `shasum -a 256` → write it back). Until backfilled, `ensure_model`'s verification necessarily fails — so the Task 4.3 UI flow only completes once the model is in place. This is expected.
 
-- [ ] **Step 3: Tests**
+- [x] **Step 3: Tests**
 
 Run: `cargo test -p audio-input`
 Expected: all pass (including the new sha256 test).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add audio-input Cargo.toml Cargo.lock
@@ -258,7 +258,7 @@ git commit -m "feat(audio-input): model download and verified cache"
 - Modify: `neothesia/src/scene/menu_scene/state.rs` (UiState gains a download-state field)
 - Modify: `neothesia/src/context.rs` (connect/disconnect helpers)
 
-- [ ] **Step 1: State in state.rs**
+- [x] **Step 1: State in state.rs**
 
 Add to `UiState` in state.rs:
 
@@ -280,7 +280,7 @@ pub enum MicSetupState {
 
 (Ensure `Default` derives correctly.)
 
-- [ ] **Step 2: Connect helpers in context.rs**
+- [x] **Step 2: Connect helpers in context.rs**
 
 ```rust
 impl Context {
@@ -331,7 +331,7 @@ impl Context {
 
 (`AudioInputConnection::drop` already stops the inference thread — implemented in Phase 2 Task 2.5.)
 
-- [ ] **Step 3: Settings UI section**
+- [x] **Step 3: Settings UI section**
 
 Insert after the "Input" section (settings.rs:69-73):
 
@@ -466,7 +466,7 @@ Notes:
 - `on_async` is a private fn at `menu_scene/mod.rs:31` returning `BoxFuture<MsgFn>`; the returned future must be registered via `self.futures.push(...)` (see `open_soundfont_picker` at settings.rs:509-517; futures are polled in `MenuScene::update`, mod.rs:313). If `on_async` is not visible from settings.rs (privacy), make it `pub(super)` or add a `pub fn spawn` wrapper in mod.rs — follow the compiler.
 - `SettingsRowSpinResult::{Plus, Minus, Idle}` matches `update_range_start` (settings.rs:477-489).
 
-- [ ] **Step 4: Restore the connection at startup**
+- [x] **Step 4: Restore the connection at startup**
 
 In `Neothesia::new` in `main.rs` (or the initialization point right after Context construction):
 
@@ -483,14 +483,24 @@ In `Neothesia::new` in `main.rs` (or the initialization point right after Contex
 
 (No automatic download at startup — the user must enable once via the settings page.)
 
-- [ ] **Step 5: Compile + manual test**
+- [x] **Step 5: Compile + manual test**
 
 Run: `cargo check --workspace && cargo run -p neothesia`
 Manual checks: the Microphone Input section appears on the settings page; enabling it shows "Error: download failed..." until the model URL is backfilled (expected); the toggle and device selection persist into the ron config (verify by restarting).
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add neothesia audio-input
 git commit -m "feat(ui): microphone input settings section with model download"
 ```
+
+
+---
+
+## Phase 4 completion record
+
+- Task 4.1 — commit 197fb71: mic config section + accessors + round-trip/missing-section tests
+- Task 4.2 — commit 672a344: model_store (URL/SHA256 placeholders deliberate until Phase 5.1; BufReader clippy fix)
+- Task 4.3 — commits 0285a52 + 98ff59c: settings section; UI-freeze fix moved download to std::thread + MicModelReady + MicSetupState on Context; MicInputError drops dead connections
+- Post-review — commit (this): download timeouts (10s connect / 300s overall); device-change reconnect failures surfaced; MicModelReady raced-disable guard (d847483)
