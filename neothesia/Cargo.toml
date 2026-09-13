@@ -24,6 +24,7 @@ neothesia-core.workspace = true
 neothesia-image.workspace = true
 midi-file.workspace = true
 midi-io.workspace = true
+audio-input.workspace = true
 nuon.workspace = true
 futures-channel.workspace = true
 cosmic-text.workspace = true

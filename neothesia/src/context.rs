@@ -21,6 +21,9 @@ pub struct Context {
     pub quad_renderer_factory: QuadRendererFactory,
 
     pub output_manager: OutputManager,
+    /// Live microphone input connection, when enabled (Phase 4 wires
+    /// the settings UI; startup restore also Phase 4).
+    pub audio_input: Option<audio_input::AudioInputConnection>,
     /// Pitches the game itself is sounding; used to suppress
     /// mic-detected ghost notes (echo suppression, design §6).
     pub sounding: std::sync::Arc<crate::sounding_tracker::SharedSoundingTracker>,
@@ -70,6 +73,7 @@ impl Context {
             quad_renderer_factory,
 
             output_manager: Default::default(),
+            audio_input: None,
             sounding: crate::sounding_tracker::shared(),
             input_manager: InputManager::new(proxy.clone()),
             config,
@@ -88,5 +92,42 @@ impl Context {
             self.window_state.scale_factor as f32,
         );
         self.transform.update(&self.gpu.queue);
+    }
+
+    /// Establish/re-establish the microphone input connection.
+    /// The caller must ensure the model is in place (Phase 4 handles
+    /// download; this task always calls it with an existing path).
+    pub fn connect_audio_input(&mut self, model_path: &std::path::Path) -> Result<(), String> {
+        self.audio_input = None; // drop the old connection
+
+        // Phase 4: prefer config.mic_device() when set
+        let device_name = audio_input::AudioInputManager::devices()
+            .first()
+            .cloned()
+            .map(|d| d.0);
+
+        let Some(device_name) = device_name else {
+            return Err("no microphone devices found".into());
+        };
+
+        let proxy = self.proxy.clone();
+        let device = audio_input::MicDevice(device_name);
+        let model_path = model_path.to_owned();
+
+        let conn = audio_input::AudioInputManager::connect(&device, &model_path, move |event| {
+            if let Some(ev) = crate::mic_event_to_neothesia(event) {
+                // Send errors after loop teardown are expected and
+                // harmless (late events for ~60ms after drop).
+                proxy.send_event(ev).ok();
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+        self.audio_input = Some(conn);
+        Ok(())
+    }
+
+    pub fn disconnect_audio_input(&mut self) {
+        self.audio_input = None;
     }
 }

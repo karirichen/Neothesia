@@ -172,6 +172,16 @@ impl Neothesia {
                 channel,
                 message,
             } => {
+                // Mic-detected onsets matching a pitch the game itself
+                // is sounding are speaker echo, not playing (design §6).
+                if source == InputSource::Mic {
+                    if let MidiMessage::NoteOn { key, .. } = message {
+                        if self.context.sounding.contains(key.as_int()) {
+                            log::debug!("suppressed ghost onset {}", key.as_int());
+                            return;
+                        }
+                    }
+                }
                 self.game_scene
                     .midi_event(&mut self.context, source, channel, &message);
             }
@@ -408,6 +418,31 @@ fn main() {
     event_loop
         .run_app(&mut NeothesiaBootstrap(None, proxy))
         .unwrap();
+}
+
+fn mic_event_to_neothesia(event: audio_input::MicEvent) -> Option<NeothesiaEvent> {
+    match event {
+        audio_input::MicEvent::NoteOn { key } => Some(NeothesiaEvent::MidiInput {
+            source: InputSource::Mic,
+            channel: 0,
+            message: MidiMessage::NoteOn {
+                key: key.into(),
+                vel: 100.into(),
+            },
+        }),
+        audio_input::MicEvent::NoteOff { key } => Some(NeothesiaEvent::MidiInput {
+            source: InputSource::Mic,
+            channel: 0,
+            message: MidiMessage::NoteOff {
+                key: key.into(),
+                vel: 0.into(),
+            },
+        }),
+        audio_input::MicEvent::Error(msg) => {
+            log::error!("audio input error: {msg}");
+            None
+        }
+    }
 }
 
 fn set_window_icon(window: &winit::window::Window) -> Result<(), Box<dyn std::error::Error>> {

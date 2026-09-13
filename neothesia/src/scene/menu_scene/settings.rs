@@ -496,23 +496,26 @@ impl super::MenuScene {
                 .build(ui);
 
             if event.is_press_start() {
-                ctx.output_manager.connection().midi_event(
-                    0.into(),
-                    midi_file::midly::MidiMessage::NoteOn {
-                        key: note.into(),
-                        vel: 100.into(),
-                    },
-                );
+                let message = midi_file::midly::MidiMessage::NoteOn {
+                    key: note.into(),
+                    vel: 100.into(),
+                };
+                // Track so previewed pitches are suppressed for mic users
+                ctx.sounding.track_midi_event(&message);
+                ctx.output_manager
+                    .connection()
+                    .midi_event(0.into(), message);
                 self.midi_input_state.note_on(note);
             }
             if event.is_press_end() {
-                ctx.output_manager.connection().midi_event(
-                    0.into(),
-                    midi_file::midly::MidiMessage::NoteOff {
-                        key: note.into(),
-                        vel: 0.into(),
-                    },
-                );
+                let message = midi_file::midly::MidiMessage::NoteOff {
+                    key: note.into(),
+                    vel: 0.into(),
+                };
+                ctx.sounding.track_midi_event(&message);
+                ctx.output_manager
+                    .connection()
+                    .midi_event(0.into(), message);
                 self.midi_input_state.note_off(note);
             }
 

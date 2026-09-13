@@ -418,7 +418,7 @@ impl Scene for MenuScene {
     fn midi_event(
         &mut self,
         ctx: &mut Context,
-        _source: InputSource,
+        source: InputSource,
         channel: u8,
         message: &MidiMessage,
     ) {
@@ -432,8 +432,15 @@ impl Scene for MenuScene {
             }
             _ => {}
         }
-        ctx.output_manager
-            .connection()
-            .midi_event(channel.into(), *message);
+        // Mic source is not forwarded: the real piano is the sound
+        // source; a synth follow-along would create echo. The
+        // midi_input_state bookkeeping above stays unconditional so
+        // the menu's "test your input" highlighting works for mic.
+        if source != InputSource::Mic {
+            ctx.sounding.track_midi_event(message);
+            ctx.output_manager
+                .connection()
+                .midi_event(channel.into(), *message);
+        }
     }
 }
