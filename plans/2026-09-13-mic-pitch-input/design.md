@@ -218,3 +218,15 @@ Velocity: fixed at 100 in v1; the model's velocity output is a future enhancemen
 | Crate exposes only `AudioInputManager` | All modules are `pub mod` + lib re-exports | Phase 4 needs `model_store` and constants; internal coherence is unaffected |
 | SPSC capacity ~3s | 4s (capture.rs) | Margin for 20ms-poll jitter; drop-oldest backstop unchanged |
 | Mic events recorded in FreePlay are previewed through the synth | Intentional | A recording captures what the player played; preview playback synthesizing it is the same semantics as MIDI-keyboard recordings |
+
+## Appendix B: Real-hardware manual test checklist (macOS, MacBook built-in microphone)
+
+- [ ] Single-note C-major scale up/down; every note lights up/goes dark correctly
+- [ ] Triads / seventh chords struck together; all keys light up
+- [ ] Legato same-note repetition (same pitch >250ms apart) re-triggers
+- [ ] Sustained note with pedal: NoteOff is later than the key release but force-cut within 4s
+- [ ] Both pp and ff dynamics trigger
+- [ ] Laptop placement: screen facing the music stand vs. side placement, both usable
+- [ ] Speaker accompaniment vs. headphones: with speakers, the accompaniment produces no ghost highlights
+- [ ] Guidance prompt appears after microphone permission denial (bare-terminal run: grant the parent terminal in System Settings)
+- [ ] After unplugging/disabling the microphone, the error is logged and the connection thread exits; re-enabling the toggle in settings recovers (toast UI in a later version)
