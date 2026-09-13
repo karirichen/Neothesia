@@ -11,3 +11,4 @@ cpal.workspace = true
 rubato.workspace = true
 neothesia-ai.workspace = true
 rten.workspace = true
+rten-tensor.workspace = true

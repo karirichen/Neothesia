@@ -62,3 +62,89 @@ pub fn silent_frames(first_frame: usize, frames: usize) -> FrameProbabilities {
         frame: vec![0.0; frames * KEY_COUNT],
     }
 }
+
+/// rten (ONNX-derived) inference backend (design §5).
+pub mod rten_backend {
+    use rten_tensor::Tensor;
+    use rten_tensor::prelude::*;
+
+    use super::{FrameProbabilities, KEY_COUNT, PitchDetector};
+    use neothesia_ai::ONSET_THRESHOLD;
+
+    pub struct RtenDetector {
+        model: rten::Model,
+    }
+
+    #[derive(Debug, thiserror::Error)]
+    #[error("failed to load pitch detection model: {0}")]
+    pub struct DetectError(String);
+
+    impl RtenDetector {
+        pub fn load(model_path: &std::path::Path) -> Result<Self, DetectError> {
+            let model =
+                rten::Model::load_file(model_path).map_err(|e| DetectError(e.to_string()))?;
+            Ok(Self { model })
+        }
+    }
+
+    impl PitchDetector for RtenDetector {
+        fn detect(&mut self, window: &[f32], first_frame: usize) -> FrameProbabilities {
+            let frames = window.len() / crate::SAMPLES_PER_FRAME;
+
+            let input = Tensor::from_data(&[1, window.len()], window.to_vec());
+
+            let inputs: Vec<(rten::NodeId, rten::ValueOrView)> =
+                vec![(self.model.input_ids()[0], input.view().into())];
+
+            let outputs = self
+                .model
+                .run_n::<7>(inputs, self.model.output_ids().try_into().unwrap(), None)
+                .expect("model inference failed");
+
+            // Output order matches the neothesia-ai offline CLI:
+            // [reg_onset, reg_offset, frame, velocity, pedal_onset, pedal_offset, pedal_frame]
+            let [reg_onset, _reg_offset, frame, ..] = outputs;
+
+            let onset_tensor = reg_onset.into_tensor::<f32>().unwrap();
+            let frame_tensor = frame.into_tensor::<f32>().unwrap();
+
+            // Model layout: [1, frames, 88] — same framing as the offline path
+            let onset_flat = onset_tensor.to_vec();
+            let frame_flat = frame_tensor.to_vec();
+
+            debug_assert_eq!(onset_flat.len(), frames * KEY_COUNT);
+
+            let onset = onset_flat.iter().map(|&p| p > ONSET_THRESHOLD).collect();
+
+            FrameProbabilities {
+                first_frame,
+                frames,
+                onset,
+                frame: frame_flat,
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod rten_tests {
+    use super::rten_backend::RtenDetector;
+    use super::*;
+    use crate::{SAMPLES_PER_FRAME, WINDOW_SAMPLES};
+
+    fn model_path() -> Option<std::path::PathBuf> {
+        std::env::var("NTS_TEST_MODEL").ok().map(Into::into)
+    }
+
+    /// A silent window must not produce any onset.
+    #[test]
+    #[ignore = "requires NTS_TEST_MODEL=<path to .rten model>"]
+    fn silence_produces_no_onsets() {
+        let Some(path) = model_path() else { return };
+        let mut det = RtenDetector::load(&path).unwrap();
+        let window = vec![0.0_f32; WINDOW_SAMPLES];
+        let probs = det.detect(&window, 0);
+        assert!(probs.onset.iter().all(|&o| !o));
+        assert_eq!(probs.frames, WINDOW_SAMPLES / SAMPLES_PER_FRAME);
+    }
+}

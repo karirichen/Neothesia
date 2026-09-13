@@ -3,8 +3,8 @@ use rten::{NodeId, ValueOrView};
 use rten_tensor::{prelude::*, *};
 
 use neothesia_ai::{
-    SEGMENT_SAMPLES, deframe, enframe, get_binarized_output_from_regression,
-    note_detection_with_onset_offset_regress,
+    FRAME_THRESHOLD, ONSET_THRESHOLD, SEGMENT_SAMPLES, deframe, enframe,
+    get_binarized_output_from_regression, note_detection_with_onset_offset_regress,
 };
 
 mod args;
@@ -41,8 +41,7 @@ fn main() -> anyhow::Result<()> {
         let reg_onset_output = Array3::from_shape_vec(shape, output.to_vec()).unwrap();
         let reg_onset_output: Array2<_> = deframe(&reg_onset_output);
 
-        let onset_threshold = 0.3;
-        get_binarized_output_from_regression(&reg_onset_output.view(), onset_threshold, 2)
+        get_binarized_output_from_regression(&reg_onset_output.view(), ONSET_THRESHOLD, 2)
     };
 
     let (offset_output, offset_shift_output) = {
@@ -62,8 +61,6 @@ fn main() -> anyhow::Result<()> {
     };
     let frame_output: Array2<_> = deframe(&frame_output);
 
-    let frame_threshold = 0.1;
-
     let file = note_detection_with_onset_offset_regress(
         frame_output.view(),
         onset_output.view(),
@@ -71,7 +68,7 @@ fn main() -> anyhow::Result<()> {
         offset_output.view(),
         offset_shift_output.view(),
         (), // velocity_output,
-        frame_threshold,
+        FRAME_THRESHOLD,
     );
 
     file.save(args.output)?;

@@ -10,6 +10,7 @@ pub const SEGMENT_SAMPLES: usize = SAMPLE_RATE as usize * 10;
 mod transcription;
 
 pub use transcription::{
-    create_midi_file, deframe, enframe, get_binarized_output_from_regression,
-    is_monotonic_neighbour, note_detection_with_onset_offset_regress,
+    FRAME_THRESHOLD, ONSET_THRESHOLD, create_midi_file, deframe, enframe,
+    get_binarized_output_from_regression, is_monotonic_neighbour,
+    note_detection_with_onset_offset_regress,
 };

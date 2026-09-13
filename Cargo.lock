@@ -220,6 +220,7 @@ dependencies = [
  "log",
  "neothesia-ai",
  "rten",
+ "rten-tensor",
  "rubato 0.16.2",
  "thiserror 2.0.18",
 ]

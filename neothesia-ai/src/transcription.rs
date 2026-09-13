@@ -2,6 +2,11 @@ use ndarray::{Array2, Array3, ArrayView1, ArrayView2, Axis, concatenate, s};
 
 use crate::FRAMES_PER_SECOND;
 
+/// Onset regression threshold used by both the offline CLI and streaming.
+pub const ONSET_THRESHOLD: f32 = 0.3;
+/// Frame activation threshold used by both the offline CLI and streaming.
+pub const FRAME_THRESHOLD: f32 = 0.1;
+
 pub fn enframe(x: &ArrayView2<f32>, segment_samples: usize) -> Array2<f32> {
     // Ensure that the number of audio samples is divisible by segment_samples
     assert!(x.shape()[1].is_multiple_of(segment_samples));
