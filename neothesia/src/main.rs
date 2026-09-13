@@ -209,13 +209,23 @@ impl Neothesia {
                 self.context.config.set_mic_enabled(false);
             }
             NeothesiaEvent::MicModelReady(result) => match result {
-                Ok(path) => match self.context.connect_audio_input(&path) {
-                    Ok(()) => self.context.mic_setup = crate::context::MicSetupState::Idle,
-                    Err(e) => {
-                        self.context.config.set_mic_enabled(false);
-                        self.context.mic_setup = crate::context::MicSetupState::Failed(e);
+                Ok(path) => {
+                    // The download may have raced a disable; only
+                    // connect if the user still wants mic input.
+                    if !self.context.config.mic_enabled() {
+                        self.context.mic_setup = crate::context::MicSetupState::Idle;
+                        return;
                     }
-                },
+                    match self.context.connect_audio_input(&path) {
+                        Ok(()) => {
+                            self.context.mic_setup = crate::context::MicSetupState::Idle;
+                        }
+                        Err(e) => {
+                            self.context.config.set_mic_enabled(false);
+                            self.context.mic_setup = crate::context::MicSetupState::Failed(e);
+                        }
+                    }
+                }
                 Err(e) => {
                     log::error!("pitch model download failed: {e}");
                     self.context.config.set_mic_enabled(false);

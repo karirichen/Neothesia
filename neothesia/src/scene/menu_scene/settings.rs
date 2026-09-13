@@ -527,7 +527,11 @@ impl super::MenuScene {
                 // Without a downloaded model there is nothing to connect
                 // with — keep the saved choice; it applies on next enable.
                 if ctx.config.mic_enabled() && audio_input::model_store::model_path().exists() {
-                    let _ = ctx.connect_audio_input(&audio_input::model_store::model_path());
+                    if let Err(e) = ctx.connect_audio_input(&audio_input::model_store::model_path())
+                    {
+                        log::warn!("mic reconnect on device change failed: {e}");
+                        ctx.mic_setup = crate::context::MicSetupState::Failed(e);
+                    }
                 }
             }
         }
