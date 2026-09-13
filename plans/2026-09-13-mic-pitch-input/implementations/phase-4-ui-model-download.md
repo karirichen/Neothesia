@@ -1,5 +1,11 @@
 # Phase 4: Settings UI + Config Persistence + Model Download — Implementation Plan
 
+> **Interface note (landed in Phase 3):** `Context::connect_audio_input` takes a `model_path: &Path`
+> argument (caller ensures the model exists — download policy stays out of Context). The Step 2 code
+> block below shows the Phase-3-era no-arg sketch; implement ONLY the config-device preference and
+> keep the `&Path` parameter. Also prefer the host default input device over `devices().first()`
+> when no config device is set (macOS first-enumerated is often an aggregate).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Microphone section on the settings page (toggle + device selection), config persistence, first-use model download and caching.
@@ -382,7 +388,7 @@ Inside the `impl super::MenuScene` block (next to `settings_input_section`, arou
                 };
                 let task = on_async(fut, |result, data, ctx| {
                     match result {
-                        Ok(_path) => match ctx.connect_audio_input() {
+                        Ok(path) => match ctx.connect_audio_input(&path) {
                             Ok(()) => {
                                 data.mic_setup = MicSetupState::Idle;
                             }
@@ -447,7 +453,7 @@ Inside the `impl super::MenuScene` block (next to `settings_input_section`, arou
             if let Some(d) = picked {
                 ctx.config.set_mic_device(Some(d));
                 if ctx.config.mic_enabled() {
-                    let _ = ctx.connect_audio_input();
+                    let _ = ctx.connect_audio_input(&audio_input::model_store::model_path());
                 }
             }
         }
@@ -468,7 +474,7 @@ In `Neothesia::new` in `main.rs` (or the initialization point right after Contex
     if context.config.mic_enabled()
         && audio_input::model_store::model_path().exists()
     {
-        if let Err(e) = context.connect_audio_input() {
+        if let Err(e) = context.connect_audio_input(&audio_input::model_store::model_path()) {
             log::warn!("mic input restore failed: {e}");
             context.config.set_mic_enabled(false);
         }
