@@ -1,6 +1,6 @@
 # Phase 3: App Event Wiring + Echo Suppression — Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Route the MicEvent stream into `NeothesiaEvent::MidiInput` (tagged with `InputSource`), implement MIDI-side echo suppression and the "Mic is not forwarded to the synth" rule.
 
@@ -28,7 +28,7 @@
 - Modify: `neothesia/src/scene/mod.rs`
 - Modify: `neothesia/src/scene/menu_scene/mod.rs`, `neothesia/src/scene/playing_scene/mod.rs`, `neothesia/src/scene/freeplay/mod.rs`
 
-- [ ] **Step 1: Define the enum and extend the event in main.rs**
+- [x] **Step 1: Define the enum and extend the event in main.rs**
 
 Above the `NeothesiaEvent` definition:
 
@@ -64,7 +64,7 @@ The consumption site (main.rs:159) becomes:
             }
 ```
 
-- [ ] **Step 2: Scene trait signature and the three implementations**
+- [x] **Step 2: Scene trait signature and the three implementations**
 
 `neothesia/src/scene/mod.rs:21` trait default implementation:
 
@@ -86,23 +86,23 @@ All three implementations add a `source: InputSource` parameter:
 - `playing_scene/mod.rs:336` → `fn midi_event(&mut self, _ctx: &mut Context, source: InputSource, channel: u8, message: &MidiMessage)` (body unchanged for now; Task 3.3 uses `source`)
 - `freeplay/mod.rs:259` → same pattern
 
-- [ ] **Step 3: Tag the three send sites**
+- [x] **Step 3: Tag the three send sites**
 
 Both `tx.send_event(NeothesiaEvent::MidiInput {` sites in `input_manager/mod.rs` get `source: crate::InputSource::Midi,`.
 
 The three sites in `scene/mod.rs` (:96 PC keyboard, :130/:184 mouse) get the corresponding `source: crate::InputSource::Keyboard,` / `crate::InputSource::Mouse,`.
 
-- [ ] **Step 4: Compile check**
+- [x] **Step 4: Compile check**
 
 Run: `cargo check -p neothesia`
 Expected: passes. Any missed construction site is flagged by the compiler (verify with `rg "NeothesiaEvent::MidiInput {"` — all must carry `source`).
 
-- [ ] **Step 5: Regression**
+- [x] **Step 5: Regression**
 
 Run: `cargo check --workspace`
 Expected: workspace compiles.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add neothesia
@@ -117,7 +117,7 @@ git commit -m "feat(app): tag MidiInput events with InputSource"
 - Create: `neothesia/src/sounding_tracker.rs`
 - Modify: `neothesia/src/main.rs` (module declaration; Context integration lands in Task 3.3)
 
-- [ ] **Step 1: Implementation + tests**
+- [x] **Step 1: Implementation + tests**
 
 `neothesia/src/sounding_tracker.rs`:
 
@@ -206,7 +206,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Register the module in main.rs**
+- [x] **Step 2: Register the module in main.rs**
 
 Add to the module declaration area of `neothesia/src/main.rs`:
 
@@ -214,12 +214,12 @@ Add to the module declaration area of `neothesia/src/main.rs`:
 mod sounding_tracker;
 ```
 
-- [ ] **Step 3: Run the tests**
+- [x] **Step 3: Run the tests**
 
 Run: `cargo test -p neothesia sounding_tracker`
 Expected: 3 passed.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add neothesia
@@ -235,7 +235,7 @@ git commit -m "feat(app): sounding notes tracker for echo suppression"
 - Modify: `neothesia/src/scene/playing_scene/midi_player.rs`
 - Modify: `neothesia/src/scene/playing_scene/mod.rs:97` (MidiPlayer::new call site)
 
-- [ ] **Step 1: Context holds the shared tracker**
+- [x] **Step 1: Context holds the shared tracker**
 
 Add a field to `Context` in `neothesia/src/context.rs` (after `pub output_manager`):
 
@@ -251,7 +251,7 @@ Initialize in the constructor:
     sounding: crate::sounding_tracker::shared(),
 ```
 
-- [ ] **Step 2: MidiPlayer bookkeeping**
+- [x] **Step 2: MidiPlayer bookkeeping**
 
 Add a field to the `MidiPlayer` struct in `midi_player.rs`:
 
@@ -320,7 +320,7 @@ The user-event forward site (`user_midi_event`, around :215) becomes:
 
 `should_forward_human_event` (:226) keeps its existing semantics (pass-through of non-note events to MIDI output) — untouched.
 
-- [ ] **Step 3: Pass the tracker at the call sites**
+- [x] **Step 3: Pass the tracker at the call sites**
 
 The `MidiPlayer::new(` call at `playing_scene/mod.rs:97` gains the argument `ctx.sounding.clone(),` (the `ctx` parameter of `PlayingScene::new` is available; do the same for `new_with_lead_in` if it has other call sites — verify with rg).
 
@@ -339,7 +339,7 @@ Update the `midi_event` implementation at `playing_scene/mod.rs:336`:
     }
 ```
 
-- [ ] **Step 4: FreePlay bookkeeping + Mic skip**
+- [x] **Step 4: FreePlay bookkeeping + Mic skip**
 
 `freeplay/mod.rs:259`:
 
@@ -377,12 +377,12 @@ Update the `midi_event` implementation at `playing_scene/mod.rs:336`:
 
 (Keep whatever follows the original forward in the function body unchanged.)
 
-- [ ] **Step 5: Compile check**
+- [x] **Step 5: Compile check**
 
 Run: `cargo check -p neothesia`
 Expected: passes.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add neothesia
@@ -397,7 +397,7 @@ git commit -m "feat(app): track sounding pitches at synth forward sites"
 - Modify: `neothesia/src/main.rs` (suppression in user_event + Context field)
 - Modify: `neothesia/src/context.rs` (audio_input connection field)
 
-- [ ] **Step 1: Suppression logic in main.rs**
+- [x] **Step 1: Suppression logic in main.rs**
 
 The `NeothesiaEvent::MidiInput` branch of `user_event` (signature updated in Task 3.1) gains suppression:
 
@@ -416,7 +416,7 @@ The `NeothesiaEvent::MidiInput` branch of `user_event` (signature updated in Tas
             }
 ```
 
-- [ ] **Step 2: Context integrates the audio input**
+- [x] **Step 2: Context integrates the audio input**
 
 Add a field to `Context` in `context.rs`:
 
@@ -432,7 +432,7 @@ audio-input.workspace = true
 
 (The workspace dependency was defined in Phase 1.) Initialize with `audio_input: None` in the constructor (the settings UI in Phase 4 establishes real connections; startup restore also lands in Phase 4).
 
-- [ ] **Step 3: MicEvent → NeothesiaEvent mapping helper**
+- [x] **Step 3: MicEvent → NeothesiaEvent mapping helper**
 
 Add to `main.rs`:
 
@@ -460,14 +460,24 @@ fn mic_event_to_neothesia(event: audio_input::MicEvent) -> Option<NeothesiaEvent
 
 (The connection code in Phase 4 reuses it.)
 
-- [ ] **Step 4: Workspace compile + tests**
+- [x] **Step 4: Workspace compile + tests**
 
 Run: `cargo check --workspace && cargo test -p neothesia sounding_tracker`
 Expected: passes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add neothesia Cargo.toml Cargo.lock
 git commit -m "feat(app): mic-side echo suppression and event mapping"
 ```
+
+---
+
+## Phase 3 completion record
+
+- Task 3.1 — commit 627ccb5: InputSource tagging, all 5 send sites + 3 scene impls + trait
+- Task 3.2 — commit a5b9cb3: SoundingNotesTracker + 3 tests
+- Task 3.3 — commits 08d0afc, 6478502: bookkeeping at all output sites (incl. plan-missed recorder.rs:148); SharedSoundingTracker newtype + all_off-on-stop_all fix (review found stranded-On hazard); 6 duplicated blocks collapsed to helper
+- Task 3.4 — commit f669605: suppression choke point in main.rs; mic_event_to_neothesia; Context.audio_input + connect/disconnect helpers; menu Mic-skip + settings preview tracking (review-found gaps)
+- Deferred to Phase 4 entry: MicEvent::Error user-visible plumbing + dead-connection state; phase-4 plan signature drift (connect_audio_input now takes &Path); default-device preference over devices().first()
