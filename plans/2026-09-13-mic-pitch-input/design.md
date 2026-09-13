@@ -1,0 +1,203 @@
+# Microphone Pitch Detection Input (Mic Pitch Input) — Design Document
+
+- Date: 2026-09-13
+- Status: All sections (§1-§4) confirmed with the stakeholder
+- Goal: Let acoustic pianos with no USB/MIDI interface (performance/home instruments) be playable in Neothesia
+
+## 1. Background & Goals
+
+Neothesia currently supports only MIDI controllers as piano input. This design adds a
+**microphone audio input** path: the built-in microphone captures the piano sound, an ML
+polyphonic pitch detector converts it into NoteOn/NoteOff events equivalent to MIDI input,
+giving acoustic piano users the same gameplay experience (scoring, keyboard highlight,
+FreePlay) as MIDI keyboard users.
+
+### Confirmed requirements
+
+| Dimension | Decision |
+|---|---|
+| Capture device | Laptop built-in microphone (environmental noise must be considered) |
+| Polyphony | Chords must be supported (polyphonic detection) |
+| Latency target | Key press to in-game highlight ≤200ms (typical ~220ms, tuned empirically) |
+| Tech route | ML model (rten, Basic Pitch style), reusing neothesia-ai infrastructure |
+| Inference backend | CPU first (M-series NEON is sufficient), replaceable-backend seam reserved |
+| Speaker echo | MIDI-side suppression + Mic events not forwarded to synth |
+| Model distribution | Download on first use (~8MB rten model) |
+| Scene coverage | Playing + FreePlay + settings-page input-source UI |
+
+### Latency bottleneck note
+
+End-to-end latency is dominated by the **trust margin** (the model needs ~100-150ms of
+context after an onset to confirm it), not by compute. A GPU would compress the ~40ms
+inference step to ~10ms, which is drowned by the trust margin; and the ort/candle routes
+bring cross-platform packaging complexity or a model rewrite. Therefore GPU is not adopted
+in v1; only a replacement seam is reserved.
+
+## 2. Existing architecture integration points (exploration findings)
+
+- All inputs (MIDI / PC keyboard / mouse) converge into
+  `NeothesiaEvent::MidiInput { channel, message }` (`neothesia/src/main.rs:37`);
+  scenes consume them uniformly via `Scene::midi_event()`. Audio input plugs in
+  seamlessly as long as it can produce NoteOn/NoteOff.
+- `cpal` is already a workspace dependency (currently output-only, but it also supports
+  input capture).
+- `neothesia-ai` already contains offline audio→MIDI transcription (rten + Basic Pitch
+  style model, 16kHz mono, onset/offset/frame outputs), currently a standalone CLI
+  (10s segments, not real-time).
+- The play-along scoring logic is naturally latency-friendly: early presses get a 500ms
+  grace window (`midi_player.rs` PlayAlong::user_pressed_recently), late presses remain
+  valid for the whole note duration. A ~200ms detection delay fits inside the existing
+  grace windows.
+
+## 3. Approach selection record
+
+| Approach | Verdict |
+|---|---|
+| A. Sliding-window streaming inference | **Adopted**. Best balance of latency/accuracy/complexity; reuses neothesia-ai |
+| B. Hybrid DSP gate + ML confirmation | Rejected. Double-system complexity is not worth it; can be a future optimization path |
+| C. Chunked offline reuse | Rejected. 2-3s latency fails the requirement |
+
+Inference backend: rten CPU (optimized for ARM NEON) first; the pipeline depends on a
+`PitchDetector` trait so an ort/CoreML or candle/Metal backend can be added later without
+touching the pipeline.
+
+## 4. Overall architecture & crate layout (design §1, confirmed)
+
+```
+┌─ neothesia (app) ──────────────────────────────────────────┐
+│  InputManager (MIDI, existing)                              │
+│  AudioInputManager (new) ──┐                                │
+│                            ├─→ NeothesiaEvent::MidiInput {  │
+│  PC keyboard/mouse (existing)─┘  source, channel, message } │
+│                             ↓                               │
+│  Scene layer (Playing/FreePlay/Menu) — zero-change consume  │
+└─────────────────────────────────────────────────────────────┘
+```
+
+| Crate | Change |
+|---|---|
+| `audio-input` **(new)** | Microphone capture (cpal), resampling, streaming inference, note tracker. Exposes only `AudioInputManager` (API style mirrors `midi_io::MidiInputManager`: `devices()` / `connect()` / disconnect notification) |
+| `neothesia-ai` | Refactor: core inference logic (enframe/deframe/note detection) extracted into a library reused by `audio-input`; `main.rs` becomes a thin CLI shell. **Its existing offline functionality is unchanged** |
+| `midi-io` | Untouched |
+| `neothesia` (app) | `NeothesiaEvent::MidiInput` gains a `source: InputSource` enum (`Keyboard`/`Mouse`/`Midi`/`Mic`); new `AudioInputManager` wiring; settings page gains an input-source section |
+
+Concurrency model: `audio-input` owns its capture callback thread + inference thread and
+sends events through the existing `EventLoopProxy`; the winit event loop naturally
+serializes them, so the scene layer stays lock-free.
+
+## 5. Core pipeline (design §2, confirmed)
+
+```
+cpal callback thread                inference thread (loop)
+────────────                        ─────────────────────────────────────
+input stream f32 (default device    every 60ms (hop) take the last 1.5s window
+config, usually 44.1/48kHz,     →   ├─ energy gate: RMS < threshold → skip this run (CPU saver)
+downmixed to mono)                 ├─ resample to 16kHz (rubato, anti-aliased)
+        ↓                          ├─ PitchDetector::detect(window)
+   SPSC buffer (~3s capacity,      │    └─ rten model → onset/frame/offset matrices (100fps)
+   drop-oldest on overflow)        └─ NoteTracker: diff newly-trusted frames vs emitted state
+                                       ├─ onset rising edge > 0.3 → NoteOn
+                                       ├─ pitch activation < 0.1 for 200ms → NoteOff
+                                       ├─ same-pitch dedup within 250ms (re-trigger guard)
+                                       └─ force NoteOff after 4s max (reverb-tail insurance)
+        events → EventLoopProxy → NeothesiaEvent::MidiInput { source: Mic }
+```
+
+Key parameters (all configurable, initial values above): window 1.5s / hop 60ms /
+trust margin 120ms.
+
+Latency budget: mic buffer ~30ms + inference ~40ms (M3 Max, 1.5s window) + trust margin
+120ms + half hop 30ms ≈ ~220ms typical; compressing the trust margin to 80ms reaches
+~180ms at the cost of slightly lower onset accuracy — to be tuned empirically.
+
+Replaceable backend seam:
+
+```rust
+trait PitchDetector {
+    fn detect(&mut self, window: &[f32], first_frame: usize) -> FrameProbabilities;
+}
+```
+
+The pipeline depends only on this trait; the rten implementation is the default
+(reusing the library extracted from neothesia-ai).
+
+Velocity: fixed at 100 in v1; the model's velocity output is a future enhancement.
+
+## 6. Echo suppression (design §3, confirmed)
+
+- New `SoundingNotesTracker` at the app layer: tracks the set of pitches the game itself
+  is currently sounding through the output manager (a synth NoteOff removes the pitch only
+  after a ~500ms delay, covering release tails).
+- A Mic-sourced NoteOn that hits this set is dropped outright (no play-along update, no
+  keyboard highlight).
+- **Mic-sourced events are not forwarded to the synth/MIDI output** (the real piano is
+  the sound source; a synth follow-along would create a new echo source). The existing
+  `user_midi_event → output` forwarding in the Playing scene is skipped for the Mic source.
+- MIDI keyboard users are completely unaffected (source=Midi forwards as before).
+- Known blind spot: the user playing the same pitch as the accompaniment simultaneously
+  gets falsely suppressed. Low probability; accepted and documented.
+
+## 7. Settings UI & configuration
+
+- A "Microphone" section next to the MIDI port list on the input settings page: device
+  dropdown (cpal input-device enumeration) + enable toggle. No level meter (YAGNI).
+- Persisted into the existing ron config: `audio_input.enabled` / `audio_input.device`.
+- Enabling with no model downloaded triggers the download flow (status + retry on failure).
+
+## 8. Model distribution
+
+- On first enable, download the ~8MB rten model into the user data directory
+  (macOS: `~/Library/Application Support/neothesia/models/`, located via the `dirs` crate).
+- Download source: a GitHub Releases attachment of this fork (the converted model is
+  uploaded once during implementation); URL + SHA256 are code constants, verified after
+  download.
+- Checksum/network failure → error message on the settings page + retry, no crash.
+- Corrupted model file (load failure) → auto-delete and re-download.
+
+## 9. Error handling & platform permissions
+
+- macOS: `NSMicrophoneUsageDescription` in `Info.plist` + entitlement; on denial,
+  UI prompt guiding the user to System Settings.
+- Microphone hot-unplug / no device → notification; reconnectable from the settings page.
+- Inference thread isolated with `catch_unwind`: on panic, mic input is auto-disabled
+  with a notification; the main program is unaffected.
+- Ring-buffer overflow (inference occasionally falling behind) → drop oldest audio
+  (a detection gap is preferable to stalling).
+
+## 10. Test strategy (design §4, confirmed)
+
+1. **Unit tests** (`audio-input`): synthetic frame-probability sequences fed into
+   `NoteTracker` to validate the state machine (trigger/dedup/timeout/force-off);
+   resampler frequency preservation against a known sine; `SoundingNotesTracker`
+   add/expire behavior.
+2. **Offline accuracy regression (core, no microphone needed)**: `test.mid` → rendered
+   to wav by the existing synth → samples fed into `PitchDetector` → compare onset hit
+   rate against the source MIDI (±50ms same pitch); mix in the accompaniment track +
+   noise to validate suppression; collect the onset detection latency distribution and
+   assert p95 < 250ms. Cases not requiring the model file run in CI; model-dependent
+   cases are `#[ignore]` and run locally.
+3. **Manual test checklist on real hardware**: scales, chords, pedaled pieces, soft
+   dynamics, laptop placement variations (macOS built-in microphone first).
+
+## 11. Known limitations (documented, not bugs)
+
+- Sustain pedal state is unknowable (no CC64); NoteOff is energy-based and later than
+  the physical key release.
+- Velocity fixed at 100.
+- Simultaneous same-pitch strikes with the accompaniment get falsely suppressed (§6 blind spot).
+- Voice/ambient sound near the microphone may produce phantom notes (mitigated by the
+  energy gate, not fully solved).
+- Accuracy degrades on very dense chords (>6 notes).
+- macOS tested first; Linux/Windows theoretically supported (cpal) but unverified.
+- Threshold parameters are configurable only via config file; no GUI tuning UI.
+
+## 12. Milestone draft (for writing-plans to detail)
+
+1. Phase 1: `neothesia-ai` library extraction + `audio-input` crate scaffold
+   (capture/resample/SPSC buffer + unit tests)
+2. Phase 2: streaming inference + NoteTracker + `PitchDetector` trait
+   (synthetic-audio end-to-end tests)
+3. Phase 3: event wiring into the app (`InputSource` tag, echo suppression,
+   no synth forwarding)
+4. Phase 4: settings UI + config persistence + model downloader
+5. Phase 5: offline accuracy regression + latency tuning + platform permissions/packaging
