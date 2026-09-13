@@ -33,7 +33,7 @@ impl Default for TrackerConfig {
             onset_cooldown_frames: 25,
             release_frames: 20,
             max_note_frames: 400,
-            frame_release_threshold: 0.1,
+            frame_release_threshold: neothesia_ai::FRAME_THRESHOLD,
         }
     }
 }
