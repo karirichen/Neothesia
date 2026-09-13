@@ -12,6 +12,10 @@ pub struct SampleBuffer {
 
 impl SampleBuffer {
     pub fn new(capacity_samples: usize) -> Self {
+        // A zero capacity would break the bounded invariant (the
+        // len == capacity check degenerates and the buffer grows
+        // unboundedly).
+        assert!(capacity_samples > 0);
         Self {
             inner: Mutex::new(VecDeque::with_capacity(capacity_samples)),
             capacity: capacity_samples,
@@ -19,8 +23,12 @@ impl SampleBuffer {
     }
 
     /// Producer side. Never blocks longer than a mutex lock.
+    /// Poisoning-tolerant: the producer runs on the realtime cpal
+    /// callback and must not panic because a consumer once panicked
+    /// while holding the lock — the data is plain samples with no
+    /// invariant worth defending.
     pub fn push(&self, samples: &[f32]) {
-        let mut q = self.inner.lock().unwrap();
+        let mut q = self.lock();
         for &s in samples {
             if q.len() == self.capacity {
                 q.pop_front();
@@ -31,22 +39,32 @@ impl SampleBuffer {
 
     /// Consumer side: drain everything currently buffered.
     pub fn drain(&self) -> Vec<f32> {
-        let mut q = self.inner.lock().unwrap();
+        let mut q = self.lock();
         q.drain(..).collect()
     }
 
     pub fn len(&self) -> usize {
-        self.inner.lock().unwrap().len()
+        self.lock().len()
     }
 
     pub fn is_empty(&self) -> bool {
         self.len() == 0
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, VecDeque<f32>> {
+        self.inner.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[should_panic]
+    fn zero_capacity_rejected() {
+        let _ = SampleBuffer::new(0);
+    }
 
     #[test]
     fn fifo_order() {
