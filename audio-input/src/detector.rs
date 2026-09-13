@@ -111,7 +111,7 @@ pub mod rten_backend {
     impl PitchDetector for RtenDetector {
         fn detect(&mut self, window: &[f32], first_frame: usize) -> FrameProbabilities {
             assert!(
-                window.len() % crate::SAMPLES_PER_FRAME == 0,
+                window.len().is_multiple_of(crate::SAMPLES_PER_FRAME),
                 "window length {} is not a multiple of SAMPLES_PER_FRAME",
                 window.len()
             );

@@ -6,6 +6,7 @@
 pub mod buffer;
 pub mod capture;
 pub mod detector;
+pub mod pipeline;
 pub mod resample;
 pub mod tracker;
 
