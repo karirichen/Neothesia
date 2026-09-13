@@ -4,6 +4,7 @@
 //! note events through a callback on a background thread.
 
 pub mod buffer;
+pub mod capture;
 pub mod resample;
 
 pub const TARGET_SAMPLE_RATE: u32 = 16_000;
