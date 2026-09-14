@@ -67,6 +67,7 @@ impl AudioInputManager {
         let buffer: Arc<SampleBuffer> = stream.buffer.clone();
         let source_rate = stream.sample_rate;
         let capture_error = stream.error.clone();
+        let stream_device = device.0.clone();
 
         std::thread::Builder::new()
             .name("audio-input-inference".into())
@@ -74,6 +75,19 @@ impl AudioInputManager {
                 let mut resampler = crate::resample::ResampleStage::new(source_rate);
                 let mut pipeline = StreamingPipeline::new(detector, TrackerConfig::default());
                 let (tx, rx) = std::sync::mpsc::channel::<MicEvent>();
+
+                // Diagnostic heartbeat: every 5s log the window RMS and
+                // event count so "no audio reaching the mic" is
+                // distinguishable from "audio but no detections".
+                let mut hb_start = std::time::Instant::now();
+                let mut hb_runs = 0usize;
+                let mut hb_rms_sum = 0.0f32;
+                let mut hb_events = 0usize;
+
+                log::info!(
+                    "audio-input: streaming from '{device}' @ {source_rate} Hz",
+                    device = stream_device
+                );
 
                 // Event relay: the user callback runs off the inference
                 // thread. After the connection is dropped, the inference
@@ -115,6 +129,9 @@ impl AudioInputManager {
 
                     match result {
                         Ok(events) => {
+                            hb_runs += 1;
+                            hb_rms_sum += pipeline.last_rms;
+                            hb_events += events.len();
                             for ev in events {
                                 let _ = tx.send(ev);
                             }
@@ -136,6 +153,17 @@ impl AudioInputManager {
                             }));
                             break;
                         }
+                    }
+
+                    if hb_start.elapsed() >= Duration::from_secs(5) {
+                        let avg_rms = if hb_runs > 0 { hb_rms_sum / hb_runs as f32 } else { 0.0 };
+                        log::info!(
+                            "audio-input: heartbeat rms={avg_rms:.4} runs={hb_runs} events={hb_events}"
+                        );
+                        hb_start = std::time::Instant::now();
+                        hb_runs = 0;
+                        hb_rms_sum = 0.0;
+                        hb_events = 0;
                     }
                 }
 

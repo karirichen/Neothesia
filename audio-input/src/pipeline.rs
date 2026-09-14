@@ -30,6 +30,8 @@ pub struct StreamingPipeline<D: PitchDetector> {
     /// asserts monotonicity; overlapping re-feeds underflow its frame
     /// arithmetic).
     last_trusted_end: usize,
+    /// RMS of the most recent window (diagnostic heartbeat).
+    pub last_rms: f32,
 }
 
 impl<D: PitchDetector> StreamingPipeline<D> {
@@ -41,6 +43,7 @@ impl<D: PitchDetector> StreamingPipeline<D> {
             total_samples: 0,
             last_run_sample: 0,
             last_trusted_end: 0,
+            last_rms: 0.0,
         }
     }
 
@@ -83,6 +86,7 @@ impl<D: PitchDetector> StreamingPipeline<D> {
 
         // energy gate
         let rms = (window.iter().map(|s| s * s).sum::<f32>() / window.len() as f32).sqrt();
+        self.last_rms = rms;
         if rms < RMS_GATE {
             // Silence has outlasted the trust margin when the window
             // start has slid past the fed frontier: any sounding notes
