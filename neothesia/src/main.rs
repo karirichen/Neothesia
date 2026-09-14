@@ -203,10 +203,13 @@ impl Neothesia {
             }
             NeothesiaEvent::MicInputError(msg) => {
                 log::error!("microphone input failed: {msg}");
-                // v1: log-only per design §9/appendix; the connection is
-                // dead — drop it so the settings toggle reflects reality.
+                // The connection is dead — drop it, disable, and surface
+                // the failure in the settings page (was: silent toggle-off).
                 self.context.audio_input = None;
                 self.context.config.set_mic_enabled(false);
+                self.context.mic_setup = crate::context::MicSetupState::Failed(format!(
+                    "microphone input failed: {msg}"
+                ));
             }
             NeothesiaEvent::MicModelReady(result) => match result {
                 Ok(path) => {

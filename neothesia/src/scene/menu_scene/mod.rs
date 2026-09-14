@@ -1,6 +1,6 @@
 mod state;
 use bytes::Bytes;
-use state::{Page, UiState};
+use state::{InputDescriptor, Page, UiState};
 
 mod midi_picker;
 use midi_picker::open_midi_file_picker;

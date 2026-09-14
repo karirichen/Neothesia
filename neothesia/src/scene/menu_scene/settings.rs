@@ -9,7 +9,7 @@ use crate::{
 use nuon::TextJustify;
 use piano_layout::Key;
 
-use super::UiState;
+use super::{UiState, state::InputDescriptor};
 
 #[derive(Default, Debug, Clone)]
 pub enum RangeDetection {
@@ -404,13 +404,30 @@ impl super::MenuScene {
                     .y(btn_y + btn_h)
                     .add_to_current(ui);
 
-                let data = &mut self.state;
-
-                if let Some(input) =
-                    nuon::combo_list(ui, "select_input_", (btn_w, btn_h), &data.inputs)
-                {
-                    ctx.config.set_input(Some(&input));
-                    data.selected_input = Some(input.clone());
+                let picked = {
+                    let data = &mut self.state;
+                    nuon::combo_list(ui, "select_input_", (btn_w, btn_h), &data.inputs).cloned()
+                };
+                if let Some(input) = picked {
+                    match &input {
+                        InputDescriptor::Mic => {
+                            // Selecting the acoustic piano enables the
+                            // microphone path (download/connect handled
+                            // by the shared flow).
+                            self.enable_mic(ctx);
+                        }
+                        InputDescriptor::Midi(port) => {
+                            // An explicit MIDI port choice opts out of
+                            // mic input (mutually exclusive inputs).
+                            if ctx.config.mic_enabled() {
+                                ctx.config.set_mic_enabled(false);
+                                ctx.disconnect_audio_input();
+                                ctx.mic_setup = MicSetupState::Idle;
+                            }
+                            ctx.config.set_input(Some(port));
+                        }
+                    }
+                    self.state.selected_input = Some(input);
                     self.popup.close();
                 }
             });
@@ -428,6 +445,41 @@ impl super::MenuScene {
             .title("Input")
             .body(|ui, row_w, row_h| self.settings_input_picker(ui, ctx, row_w, row_h))
             .build(ui, rows);
+    }
+
+    /// Shared enable flow for the settings toggler and the Input
+    /// picker's mic entry: connect immediately if the model is cached,
+    /// otherwise kick off the off-thread download.
+    fn enable_mic(&mut self, ctx: &mut Context) {
+        if matches!(ctx.mic_setup, MicSetupState::Downloading) {
+            return;
+        }
+        ctx.config.set_mic_enabled(true);
+        if audio_input::model_store::model_path().exists() {
+            match ctx.connect_audio_input(&audio_input::model_store::model_path()) {
+                Ok(()) => ctx.mic_setup = MicSetupState::Idle,
+                Err(e) => {
+                    ctx.config.set_mic_enabled(false);
+                    ctx.mic_setup = MicSetupState::Failed(e);
+                }
+            }
+        } else {
+            ctx.mic_setup = MicSetupState::Downloading;
+            // ensure_model() does blocking HTTP I/O — must run off
+            // the UI thread; result arrives via MicModelReady.
+            let proxy = ctx.proxy.clone();
+            std::thread::Builder::new()
+                .name("mic-model-download".into())
+                .spawn(move || {
+                    let result = audio_input::model_store::ensure_model();
+                    let event = match result {
+                        Ok(path) => NeothesiaEvent::MicModelReady(Ok(path)),
+                        Err(e) => NeothesiaEvent::MicModelReady(Err(e.to_string())),
+                    };
+                    proxy.send_event(event).ok();
+                })
+                .expect("failed to spawn download thread");
+        }
     }
 
     fn settings_mic_section(
@@ -462,25 +514,10 @@ impl super::MenuScene {
             .value(enabled)
             .build(ui, rows)
         {
-            let target = !enabled;
-            ctx.config.set_mic_enabled(target);
-            if target {
-                ctx.mic_setup = MicSetupState::Downloading;
-                // ensure_model() does blocking HTTP I/O — must run off
-                // the UI thread; result arrives via MicModelReady.
-                let proxy = ctx.proxy.clone();
-                std::thread::Builder::new()
-                    .name("mic-model-download".into())
-                    .spawn(move || {
-                        let result = audio_input::model_store::ensure_model();
-                        let event = match result {
-                            Ok(path) => NeothesiaEvent::MicModelReady(Ok(path)),
-                            Err(e) => NeothesiaEvent::MicModelReady(Err(e.to_string())),
-                        };
-                        proxy.send_event(event).ok();
-                    })
-                    .expect("failed to spawn download thread");
+            if !enabled {
+                self.enable_mic(ctx);
             } else {
+                ctx.config.set_mic_enabled(false);
                 ctx.disconnect_audio_input();
                 ctx.mic_setup = MicSetupState::Idle;
             }

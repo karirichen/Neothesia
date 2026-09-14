@@ -39,6 +39,13 @@ impl AudioInputManager {
         capture::devices()
     }
 
+    /// Heuristic default device when the user has not picked one:
+    /// prefer a built-in mic over Continuity/virtual devices (macOS
+    /// enumeration often puts "…iPhone… Microphone" first).
+    pub fn default_device() -> Option<MicDevice> {
+        pick_default_device(&capture::devices()).cloned()
+    }
+
     /// Connect to `device`, run the streaming pipeline on a background
     /// thread, deliver events via `on_event`. `model_path` must point
     /// to a valid .rten model file.
@@ -147,5 +154,71 @@ impl AudioInputManager {
             stop,
             _stream: stream,
         })
+    }
+}
+
+/// Pure ranking used by [`AudioInputManager::default_device`]:
+/// built-in-style mics first (e.g. "MacBook Pro Microphone"), then
+/// anything that is not a phone/Continuity/virtual device, then
+/// whatever is first.
+fn pick_default_device(devices: &[MicDevice]) -> Option<&MicDevice> {
+    let looks_builtin = |n: &str| {
+        (n.contains("MacBook") || n.contains("Microphone") || n.contains("Internal"))
+            && !n.contains("iPhone")
+            && !n.contains("iPad")
+    };
+    let looks_virtual = |n: &str| {
+        n.contains("iPhone")
+            || n.contains("iPad")
+            || n.contains("Teams")
+            || n.contains("Aggregate")
+            || n.contains("Virtual")
+    };
+
+    devices
+        .iter()
+        .find(|d| looks_builtin(&d.0))
+        .or_else(|| devices.iter().find(|d| !looks_virtual(&d.0)))
+        .or_else(|| devices.first())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mic(name: &str) -> MicDevice {
+        MicDevice(name.to_string())
+    }
+
+    /// Real-world macOS enumeration order: Continuity iPhone first.
+    #[test]
+    fn default_device_prefers_builtin_over_continuity() {
+        let devices = vec![
+            mic("Karina's iPhone 12 Microphone"),
+            mic("MacBook Pro Microphone"),
+            mic("Microsoft Teams Audio"),
+        ];
+        assert_eq!(
+            pick_default_device(&devices).map(|d| d.0.as_str()),
+            Some("MacBook Pro Microphone")
+        );
+    }
+
+    #[test]
+    fn default_device_falls_back_to_first_non_virtual() {
+        let devices = vec![mic("Some Virtual Driver"), mic("Yeti USB Mic")];
+        assert_eq!(
+            pick_default_device(&devices).map(|d| d.0.as_str()),
+            Some("Yeti USB Mic")
+        );
+    }
+
+    #[test]
+    fn default_device_last_resort_is_first() {
+        let devices = vec![mic("Only Virtual")];
+        assert_eq!(
+            pick_default_device(&devices).map(|d| d.0.as_str()),
+            Some("Only Virtual")
+        );
     }
 }

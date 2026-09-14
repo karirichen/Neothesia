@@ -5,7 +5,22 @@ use crate::{
     scene::menu_scene::settings::RangeDetection, song::Song,
 };
 
-type InputDescriptor = midi_io::MidiInputPort;
+/// The selectable game inputs: a MIDI port, or the microphone path
+/// used for acoustic pianos (designated entry in the Input picker).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum InputDescriptor {
+    Midi(midi_io::MidiInputPort),
+    Mic,
+}
+
+impl std::fmt::Display for InputDescriptor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Midi(port) => write!(f, "{port}"),
+            Self::Mic => write!(f, "Acoustic Piano (Microphone)"),
+        }
+    }
+}
 
 pub struct UiState {
     pub outputs: Vec<OutputDescriptor>,
@@ -74,7 +89,15 @@ impl UiState {
 impl UiState {
     pub fn tick(&mut self, ctx: &mut Context) {
         self.outputs = ctx.output_manager.outputs();
-        self.inputs = ctx.input_manager.inputs();
+        // Mic first so the acoustic-piano entry is discoverable;
+        // MIDI ports follow.
+        self.inputs = ctx
+            .input_manager
+            .inputs()
+            .into_iter()
+            .map(InputDescriptor::Midi)
+            .collect();
+        self.inputs.insert(0, InputDescriptor::Mic);
 
         if self.selected_output.is_none() {
             if let Some(name) = ctx.config.output() {
@@ -93,11 +116,11 @@ impl UiState {
         }
 
         if self.selected_input.is_none() {
-            if let Some(input) = self
-                .inputs
-                .iter()
-                .find(|input| Some(input.to_string().as_str()) == ctx.config.input())
-            {
+            if ctx.config.mic_enabled() {
+                self.selected_input = Some(InputDescriptor::Mic);
+            } else if let Some(input) = self.inputs.iter().find(|input| {
+                matches!(input, InputDescriptor::Midi(p) if Some(p.to_string().as_str()) == ctx.config.input())
+            }) {
                 self.selected_input = Some(input.clone());
             } else {
                 self.selected_input = self.inputs.first().cloned();
@@ -129,7 +152,11 @@ pub fn connect_io(data: &UiState, ctx: &mut Context) {
     }
 
     if let Some(port) = data.selected_input.clone() {
-        ctx.input_manager.connect_input(port);
+        if let InputDescriptor::Midi(port) = port {
+            ctx.input_manager.connect_input(port);
+        }
+        // The Mic input's lifecycle is managed by the settings flow
+        // (enable toggle / model download); nothing to connect here.
     }
 }
 

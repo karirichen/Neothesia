@@ -115,17 +115,20 @@ impl Context {
 
         let device_name = match self.config.mic_device() {
             Some(name) => Some(name.to_owned()),
-            // Phase 5 validates device choice on real hardware;
-            // first-enumerated may be an aggregate on macOS.
-            None => audio_input::AudioInputManager::devices()
-                .first()
-                .cloned()
-                .map(|d| d.0),
+            // Heuristic default (built-in mic over Continuity/virtual
+            // devices) — macOS enumeration often puts "…iPhone…
+            // Microphone" first, which would silently listen to a phone.
+            None => audio_input::AudioInputManager::default_device().map(|d| d.0),
         };
 
         let Some(device_name) = device_name else {
             return Err("no microphone devices found".into());
         };
+        if self.config.mic_device().is_none() {
+            // Persist the resolved choice so the Device row shows what
+            // is actually in use and reconnects stay stable.
+            self.config.set_mic_device(Some(device_name.clone()));
+        }
 
         let proxy = self.proxy.clone();
         let device = audio_input::MicDevice(device_name);
