@@ -11,8 +11,7 @@ use sha2::{Digest, Sha256};
 /// converted to rten. ~147MB.
 pub const MODEL_URL: &str =
     "https://github.com/karirichen/Neothesia/releases/download/models/piano_transcription.rten";
-pub const MODEL_SHA256: &str =
-    "36f08f9257c5df9582719daf767bc312d93133f25484ac6b11521ad279a2b723";
+pub const MODEL_SHA256: &str = "36f08f9257c5df9582719daf767bc312d93133f25484ac6b11521ad279a2b723";
 
 const MODEL_FILE: &str = "piano_transcription.rten";
 
