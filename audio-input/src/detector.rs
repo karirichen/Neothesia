@@ -134,12 +134,23 @@ pub mod rten_backend {
             let onset_tensor = reg_onset.into_tensor::<f32>().unwrap();
             let frame_tensor = frame.into_tensor::<f32>().unwrap();
 
-            // Model layout: [1, frames, 88] — same framing as the offline path
-            let onset_flat = onset_tensor.to_vec();
-            let frame_flat = frame_tensor.to_vec();
-
-            assert_eq!(onset_flat.len(), frames * KEY_COUNT);
-            assert_eq!(frame_flat.len(), frames * KEY_COUNT);
+            // Model layout: [1, frames + 1, 88] — the conv stack emits one
+            // extra boundary frame (N/160 + 1, same as the offline path's
+            // 10s -> 1001 frames). The boundary frame straddles the window
+            // edge and is owned by the next window, so truncate to the
+            // whole-frame count (mirrors offline `deframe`, which drops the
+            // last frame of each segment).
+            let expected = frames * KEY_COUNT;
+            let mut onset_flat = onset_tensor.to_vec();
+            let mut frame_flat = frame_tensor.to_vec();
+            assert!(
+                onset_flat.len() >= expected && frame_flat.len() >= expected,
+                "model emitted {} / {} values, expected >= {expected}",
+                onset_flat.len(),
+                frame_flat.len()
+            );
+            onset_flat.truncate(expected);
+            frame_flat.truncate(expected);
 
             let onset = onset_flat.iter().map(|&p| p > ONSET_THRESHOLD).collect();
 

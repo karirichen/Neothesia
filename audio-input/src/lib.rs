@@ -23,6 +23,6 @@ pub const SAMPLES_PER_FRAME: usize = 160;
 /// Streaming inference window: 1.5s.
 pub const WINDOW_SAMPLES: usize = 24_000;
 /// Window hop: 60ms.
-pub const HOP_SAMPLES: usize = 960;
+pub const HOP_SAMPLES: usize = 3_200;
 /// Frames near the window edge whose predictions are unreliable.
 pub const TRUST_MARGIN_FRAMES: usize = 12;

@@ -5,11 +5,14 @@ use std::path::PathBuf;
 
 use sha2::{Digest, Sha256};
 
-/// Points at this fork's GitHub release attachment.
-/// Phase 5 Task 5.1 backfills URL + SHA256 after the model is uploaded.
+/// Kong et al. 2020 high-resolution piano transcription model
+/// (CRNN_note_F1=0.9677), ONNX-exported by LanOss/mobimml-piano-
+/// transcription with the input dim patched to dynamic length, then
+/// converted to rten. ~147MB.
 pub const MODEL_URL: &str =
     "https://github.com/karirichen/Neothesia/releases/download/models/piano_transcription.rten";
-pub const MODEL_SHA256: &str = "REPLACE_WITH_ACTUAL_SHA256_AT_RELEASE";
+pub const MODEL_SHA256: &str =
+    "36f08f9257c5df9582719daf767bc312d93133f25484ac6b11521ad279a2b723";
 
 const MODEL_FILE: &str = "piano_transcription.rten";
 
@@ -56,7 +59,7 @@ pub fn ensure_model() -> Result<PathBuf, ModelStoreError> {
         .map_err(|e| ModelStoreError::Download(e.to_string()))?;
 
     let bytes: Vec<u8> = std::io::BufReader::new(response.into_reader())
-        .take(64 * 1024 * 1024) // hard cap 64MB
+        .take(256 * 1024 * 1024) // hard cap 256MB (current model is ~147MB)
         .bytes()
         .collect::<Result<_, _>>()?;
 

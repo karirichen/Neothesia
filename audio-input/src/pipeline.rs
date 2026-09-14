@@ -160,11 +160,10 @@ mod tests {
     fn untrusted_margin_frames_are_deferred() {
         // onset appears at global frame 145 (>= 150-12=138) → must not
         // trigger in window 1. Each hop advances the window start by
-        // HOP_SAMPLES=960 → first_frame by 6 frames, so:
+        // HOP_SAMPLES=3200 → first_frame by 20 frames, so:
         //   w1: first_frame=0,  onset local 145; trusted feed [0,138)
-        //   w2: first_frame=6,  onset local 139; trusted feed [138,144)
-        //   w3: first_frame=12, onset local 133; trusted feed [144,150)
-        // The onset first becomes trusted in window 3 (local 133 ∈ [132,138)).
+        //   w2: first_frame=20, onset local 125; trusted feed [138,158)
+        // The onset first becomes trusted in window 2 (local 125 < 138).
         let w1 = {
             let mut pr = silent_frames(0, 150);
             pr.onset[145 * 88 + 40] = true;
@@ -172,18 +171,12 @@ mod tests {
             pr
         };
         let w2 = {
-            let mut pr = silent_frames(6, 150);
-            pr.onset[139 * 88 + 40] = true;
-            pr.frame[139 * 88 + 40] = 0.9;
+            let mut pr = silent_frames(20, 150);
+            pr.onset[125 * 88 + 40] = true;
+            pr.frame[125 * 88 + 40] = 0.9;
             pr
         };
-        let w3 = {
-            let mut pr = silent_frames(12, 150);
-            pr.onset[133 * 88 + 40] = true;
-            pr.frame[133 * 88 + 40] = 0.9;
-            pr
-        };
-        let mut p = mk_pipeline(vec![w1, w2, w3]);
+        let mut p = mk_pipeline(vec![w1, w2]);
 
         let noise = vec![0.01_f32; WINDOW_SAMPLES];
         assert!(
@@ -192,10 +185,7 @@ mod tests {
         );
 
         let noise2 = vec![0.01_f32; HOP_SAMPLES];
-        assert!(p.push(&noise2).is_empty(), "still untrusted in window 2");
-
-        let noise3 = vec![0.01_f32; HOP_SAMPLES];
-        let ev = p.push(&noise3);
+        let ev = p.push(&noise2);
         assert_eq!(ev, vec![MicEvent::NoteOn { key: 21 + 40 }]);
     }
 
@@ -271,11 +261,11 @@ mod tests {
             }
             pr
         };
-        // The burst run's window: one 4800-sample push slides the
-        // window start to 4800 → first_frame = 30. Feed [138, 168):
-        // 30 silent frames, so the held note's release window (20
-        // frames) elapses mid-range → exactly one NoteOff.
-        let w2 = silent_frames(30, 150);
+        // The burst run's window: one 5*HOP(=16000)-sample push slides
+        // the window start to 16000 → first_frame = 100. Feed
+        // [138, 238): 100 silent frames, so the held note's release
+        // window (20 frames) elapses mid-range → exactly one NoteOff.
+        let w2 = silent_frames(100, 150);
         let mut p = mk_pipeline(vec![w1, w2]);
 
         let ev = p.push(&vec![0.01_f32; WINDOW_SAMPLES]);
