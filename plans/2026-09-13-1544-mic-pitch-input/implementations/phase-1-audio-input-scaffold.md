@@ -8,7 +8,7 @@
 
 **Tech Stack:** Rust workspace, cpal (device enumeration and stream; this phase only enumerates + compiles), rubato (resampling), existing `cargo test`.
 
-**Design doc:** `plans/2026-09-13-mic-pitch-input/design.md`
+**Design doc:** `plans/2026-09-13-1544-mic-pitch-input/spec.md`
 
 ---
 

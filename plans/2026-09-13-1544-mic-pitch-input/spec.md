@@ -1,4 +1,4 @@
-# Microphone Pitch Detection Input (Mic Pitch Input) — Design Document
+# Microphone Pitch Detection Input (Mic Pitch Input) — Specification
 
 - Date: 2026-09-13
 - Status: All sections (§1-§4) confirmed with the stakeholder

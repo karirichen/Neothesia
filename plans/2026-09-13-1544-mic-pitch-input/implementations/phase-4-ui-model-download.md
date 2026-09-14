@@ -14,7 +14,7 @@
 
 **Tech Stack:** nuon UI, ureq 2 (blocking HTTP), sha2, dirs, existing ron config.
 
-**Design doc:** `plans/2026-09-13-mic-pitch-input/design.md` §7, §8
+**Design doc:** `plans/2026-09-13-1544-mic-pitch-input/spec.md` §7, §8
 
 ---
 

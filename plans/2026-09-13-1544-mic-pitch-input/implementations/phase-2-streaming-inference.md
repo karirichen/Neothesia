@@ -8,7 +8,7 @@
 
 **Tech Stack:** rten (model inference), neothesia-ai lib (Phase 1 output), plain Rust state machine.
 
-**Design doc:** `plans/2026-09-13-mic-pitch-input/design.md` §5
+**Design doc:** `plans/2026-09-13-1544-mic-pitch-input/spec.md` §5
 
 **Parameter quick reference (aligned with the design doc; hop corrected from 64ms to 60ms to sit on the 10ms frame grid — recorded in the design doc appendix):**
 - Window `WINDOW_SAMPLES = 24000` (1.5s) → 150 frames

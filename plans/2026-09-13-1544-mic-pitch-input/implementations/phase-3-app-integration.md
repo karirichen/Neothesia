@@ -8,7 +8,7 @@
 
 **Tech Stack:** Pure app-layer changes, midly MidiMessage, existing winit event loop.
 
-**Design doc:** `plans/2026-09-13-mic-pitch-input/design.md` §4, §6
+**Design doc:** `plans/2026-09-13-1544-mic-pitch-input/spec.md` §4, §6
 
 **Change map (all existing code points touched by this phase):**
 - `neothesia/src/main.rs:37` `NeothesiaEvent::MidiInput` definition + `:159` consumption

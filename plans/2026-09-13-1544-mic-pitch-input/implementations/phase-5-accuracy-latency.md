@@ -8,7 +8,7 @@
 
 **Tech Stack:** Sine synthesis, the existing rten model, GitHub Releases, winit/CI bundle.
 
-**Design doc:** `plans/2026-09-13-mic-pitch-input/design.md` §10, §11
+**Design doc:** `plans/2026-09-13-1544-mic-pitch-input/spec.md` §10, §11
 
 ---
 
@@ -226,11 +226,11 @@ git commit -m "ci(macos): declare microphone usage in app bundle"
 ### Task 5.4: Design doc appendix update + real-hardware manual checklist
 
 **Files:**
-- Modify: `plans/2026-09-13-mic-pitch-input/design.md` (append the appendix)
+- Modify: `plans/2026-09-13-1544-mic-pitch-input/spec.md` (append the appendix)
 
 - [ ] **Step 1: Append the implementation-deviation appendix**
 
-Append to design.md:
+Append to spec.md:
 
 ```markdown
 ## Appendix A: Implementation deviations
@@ -264,7 +264,7 @@ Verify each item on real hardware; for failures, return to the corresponding pha
 - [ ] **Step 3: Commit**
 
 ```bash
-git add plans/2026-09-13-mic-pitch-input
+git add plans/2026-09-13-1544-mic-pitch-input
 git commit -m "docs(mic-input): implementation deviations and manual test checklist"
 ```
 
@@ -276,4 +276,4 @@ git commit -m "docs(mic-input): implementation deviations and manual test checkl
 - `cargo test --workspace` all green (excluding ignored)
 - The GitHub Release model downloads and its SHA256 verifies
 - The macOS CI bundle carries the microphone permission declaration
-- design.md Appendices A/B in place; the manual checklist executed
+- spec.md Appendices A/B in place; the manual checklist executed
