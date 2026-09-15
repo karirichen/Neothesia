@@ -329,7 +329,11 @@ impl ApplicationHandler<NeothesiaEvent> for NeothesiaBootstrap {
             return;
         }
 
-        let attributes = winit::window::Window::default_attributes()
+        // `mut` is required by the x11/wayland cfg'd reassignments
+        // below; macOS/Windows builds see an unused-mut warning, which
+        // upstream CI (Linux) does not.
+        #[allow(unused_mut)]
+        let mut attributes = winit::window::Window::default_attributes()
             .with_inner_size(winit::dpi::LogicalSize {
                 width: 1080.0,
                 height: 720.0,
