@@ -76,11 +76,12 @@ impl Neothesia {
 
         // No automatic download at startup — the user enables once via
         // settings; restore only if the model is already cached.
-        if context.config.mic_enabled() && audio_input::model_store::model_path().exists() {
-            if let Err(e) = context.connect_audio_input(&audio_input::model_store::model_path()) {
-                log::warn!("mic input restore failed: {e}");
-                context.config.set_mic_enabled(false);
-            }
+        if context.config.mic_enabled()
+            && audio_input::model_store::model_path().exists()
+            && let Err(e) = context.connect_audio_input(&audio_input::model_store::model_path())
+        {
+            log::warn!("mic input restore failed: {e}");
+            context.config.set_mic_enabled(false);
         }
 
         Self {
@@ -187,13 +188,12 @@ impl Neothesia {
             } => {
                 // Mic-detected onsets matching a pitch the game itself
                 // is sounding are speaker echo, not playing (design §6).
-                if source == InputSource::Mic {
-                    if let MidiMessage::NoteOn { key, .. } = message {
-                        if self.context.sounding.contains(key.as_int()) {
-                            log::debug!("suppressed ghost onset {}", key.as_int());
-                            return;
-                        }
-                    }
+                if source == InputSource::Mic
+                    && let MidiMessage::NoteOn { key, .. } = message
+                    && self.context.sounding.contains(key.as_int())
+                {
+                    log::debug!("suppressed ghost onset {}", key.as_int());
+                    return;
                 }
                 self.game_scene
                     .midi_event(&mut self.context, source, channel, &message);
@@ -329,7 +329,7 @@ impl ApplicationHandler<NeothesiaEvent> for NeothesiaBootstrap {
             return;
         }
 
-        let mut attributes = winit::window::Window::default_attributes()
+        let attributes = winit::window::Window::default_attributes()
             .with_inner_size(winit::dpi::LogicalSize {
                 width: 1080.0,
                 height: 720.0,

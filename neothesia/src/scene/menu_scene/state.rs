@@ -151,12 +151,10 @@ pub fn connect_io(data: &UiState, ctx: &mut Context) {
             .set_gain(ctx.config.audio_gain());
     }
 
-    if let Some(port) = data.selected_input.clone() {
-        if let InputDescriptor::Midi(port) = port {
-            ctx.input_manager.connect_input(port);
-        }
-        // The Mic input's lifecycle is managed by the settings flow
-        // (enable toggle / model download); nothing to connect here.
+    // The Mic input's lifecycle is managed by the settings flow (enable
+    // toggle / model download); only MIDI ports connect through here.
+    if let Some(InputDescriptor::Midi(port)) = data.selected_input.clone() {
+        ctx.input_manager.connect_input(port);
     }
 }
 
