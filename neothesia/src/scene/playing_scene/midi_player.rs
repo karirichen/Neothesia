@@ -16,6 +16,7 @@ pub struct MidiPlayer {
     song: Song,
     play_along: PlayAlong,
     separate_channels: bool,
+    sounding: std::sync::Arc<crate::sounding_tracker::SharedSoundingTracker>,
 }
 
 impl MidiPlayer {
@@ -24,12 +25,14 @@ impl MidiPlayer {
         song: Song,
         user_keyboard_range: piano_layout::KeyboardRange,
         separate_channels: bool,
+        sounding: std::sync::Arc<crate::sounding_tracker::SharedSoundingTracker>,
     ) -> Self {
         Self::new_with_lead_in(
             output,
             song,
             user_keyboard_range,
             separate_channels,
+            sounding,
             Duration::from_secs(3),
         )
     }
@@ -39,6 +42,7 @@ impl MidiPlayer {
         song: Song,
         user_keyboard_range: piano_layout::KeyboardRange,
         separate_channels: bool,
+        sounding: std::sync::Arc<crate::sounding_tracker::SharedSoundingTracker>,
         lead_in: Duration,
     ) -> Self {
         let mut player = Self {
@@ -47,6 +51,7 @@ impl MidiPlayer {
             play_along: PlayAlong::new(user_keyboard_range),
             song,
             separate_channels,
+            sounding,
         };
         // Let's reset programs,
         // for timestamp 0 most likely all programs will be 0, so this should clean any leftovers
@@ -79,6 +84,7 @@ impl MidiPlayer {
             };
             match config.player {
                 PlayerConfig::Auto => {
+                    self.sounding.track_midi_event(&event.message);
                     self.output // TODO: Send to multiple outputs
                         .midi_event(u4::new(channel), event.message);
                 }
@@ -102,6 +108,10 @@ impl MidiPlayer {
 
     fn clear(&mut self) {
         self.output.stop_all();
+        // Whatever was sounding is now silenced; mark everything
+        // released so no pitch stays `On` in the echo-suppression
+        // tracker forever (pause/seek/scene-exit paths land here).
+        self.sounding.all_off();
     }
 }
 
@@ -212,7 +222,20 @@ impl MidiPlayer {
         &self.play_along
     }
 
-    pub fn user_midi_event(&mut self, channel: u8, message: &MidiMessage) {
+    pub fn user_midi_event(
+        &mut self,
+        channel: u8,
+        message: &MidiMessage,
+        source: crate::InputSource,
+    ) {
+        // Mic source is not forwarded: the real piano is the sound
+        // source; a synth follow-along would create echo.
+        if source == crate::InputSource::Mic {
+            self.play_along.midi_event(MidiEventSource::User, message);
+            return;
+        }
+
+        self.sounding.track_midi_event(message);
         self.output.midi_event(u4::new(channel), *message);
         self.play_along.midi_event(MidiEventSource::User, message);
     }

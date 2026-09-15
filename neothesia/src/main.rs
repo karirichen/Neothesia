@@ -6,6 +6,7 @@ mod input_manager;
 mod output_manager;
 mod scene;
 mod song;
+mod sounding_tracker;
 mod utils;
 
 use std::{sync::Arc, time::Duration};
@@ -27,6 +28,15 @@ use winit::{
 
 use crate::utils::window::WinitEvent;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum InputSource {
+    #[default]
+    Midi,
+    Keyboard,
+    Mouse,
+    Mic,
+}
+
 #[derive(Debug)]
 pub enum NeothesiaEvent {
     /// Go to playing scene
@@ -35,12 +45,17 @@ pub enum NeothesiaEvent {
     /// Go to main menu scene
     MainMenu(Option<song::Song>),
     MidiInput {
+        source: InputSource,
         /// The MIDI channel that this message is associated with.
         channel: u8,
         /// The MIDI message type and associated data.
         message: MidiMessage,
     },
     Exit,
+    /// Microphone input background failure (device loss, inference panic).
+    MicInputError(String),
+    /// Result of the background model download (settings flow).
+    MicModelReady(Result<std::path::PathBuf, String>),
 }
 
 struct Neothesia {
@@ -58,6 +73,16 @@ impl Neothesia {
 
         context.resize();
         context.gpu.submit();
+
+        // No automatic download at startup — the user enables once via
+        // settings; restore only if the model is already cached.
+        if context.config.mic_enabled()
+            && audio_input::model_store::model_path().exists()
+            && let Err(e) = context.connect_audio_input(&audio_input::model_store::model_path())
+        {
+            log::warn!("mic input restore failed: {e}");
+            context.config.set_mic_enabled(false);
+        }
 
         Self {
             context,
@@ -156,13 +181,60 @@ impl Neothesia {
                 let to = menu_scene::MenuScene::new(&mut self.context, song);
                 self.game_scene = Box::new(to);
             }
-            NeothesiaEvent::MidiInput { channel, message } => {
+            NeothesiaEvent::MidiInput {
+                source,
+                channel,
+                message,
+            } => {
+                // Mic-detected onsets matching a pitch the game itself
+                // is sounding are speaker echo, not playing (design §6).
+                if source == InputSource::Mic
+                    && let MidiMessage::NoteOn { key, .. } = message
+                    && self.context.sounding.contains(key.as_int())
+                {
+                    log::debug!("suppressed ghost onset {}", key.as_int());
+                    return;
+                }
                 self.game_scene
-                    .midi_event(&mut self.context, channel, &message);
+                    .midi_event(&mut self.context, source, channel, &message);
             }
             NeothesiaEvent::Exit => {
                 event_loop.exit();
             }
+            NeothesiaEvent::MicInputError(msg) => {
+                log::error!("microphone input failed: {msg}");
+                // The connection is dead — drop it, disable, and surface
+                // the failure in the settings page (was: silent toggle-off).
+                self.context.audio_input = None;
+                self.context.config.set_mic_enabled(false);
+                self.context.mic_setup = crate::context::MicSetupState::Failed(format!(
+                    "microphone input failed: {msg}"
+                ));
+            }
+            NeothesiaEvent::MicModelReady(result) => match result {
+                Ok(path) => {
+                    // The download may have raced a disable; only
+                    // connect if the user still wants mic input.
+                    if !self.context.config.mic_enabled() {
+                        self.context.mic_setup = crate::context::MicSetupState::Idle;
+                        return;
+                    }
+                    match self.context.connect_audio_input(&path) {
+                        Ok(()) => {
+                            self.context.mic_setup = crate::context::MicSetupState::Idle;
+                        }
+                        Err(e) => {
+                            self.context.config.set_mic_enabled(false);
+                            self.context.mic_setup = crate::context::MicSetupState::Failed(e);
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::error!("pitch model download failed: {e}");
+                    self.context.config.set_mic_enabled(false);
+                    self.context.mic_setup = crate::context::MicSetupState::Failed(e);
+                }
+            },
         }
     }
 
@@ -257,6 +329,10 @@ impl ApplicationHandler<NeothesiaEvent> for NeothesiaBootstrap {
             return;
         }
 
+        // `mut` is required by the x11/wayland cfg'd reassignments
+        // below; macOS/Windows builds see an unused-mut warning, which
+        // upstream CI (Linux) does not.
+        #[allow(unused_mut)]
         let mut attributes = winit::window::Window::default_attributes()
             .with_inner_size(winit::dpi::LogicalSize {
                 width: 1080.0,
@@ -393,6 +469,28 @@ fn main() {
     event_loop
         .run_app(&mut NeothesiaBootstrap(None, proxy))
         .unwrap();
+}
+
+fn mic_event_to_neothesia(event: audio_input::MicEvent) -> Option<NeothesiaEvent> {
+    match event {
+        audio_input::MicEvent::NoteOn { key } => Some(NeothesiaEvent::MidiInput {
+            source: InputSource::Mic,
+            channel: 0,
+            message: MidiMessage::NoteOn {
+                key: key.into(),
+                vel: 100.into(),
+            },
+        }),
+        audio_input::MicEvent::NoteOff { key } => Some(NeothesiaEvent::MidiInput {
+            source: InputSource::Mic,
+            channel: 0,
+            message: MidiMessage::NoteOff {
+                key: key.into(),
+                vel: 0.into(),
+            },
+        }),
+        audio_input::MicEvent::Error(msg) => Some(NeothesiaEvent::MicInputError(msg.to_string())),
+    }
 }
 
 fn set_window_icon(window: &winit::window::Window) -> Result<(), Box<dyn std::error::Error>> {

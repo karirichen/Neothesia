@@ -10,6 +10,16 @@ use winit::event_loop::EventLoopProxy;
 
 use winit::window::Window;
 
+/// Microphone setup flow state; lives on Context so background
+/// threads can drive it via events, independent of menu lifetime.
+#[derive(Debug, Clone, Default)]
+pub enum MicSetupState {
+    #[default]
+    Idle,
+    Downloading,
+    Failed(String),
+}
+
 pub struct Context {
     pub window: Arc<Window>,
 
@@ -21,6 +31,14 @@ pub struct Context {
     pub quad_renderer_factory: QuadRendererFactory,
 
     pub output_manager: OutputManager,
+    /// Live microphone input connection, when enabled (Phase 4 wires
+    /// the settings UI; startup restore also Phase 4).
+    pub audio_input: Option<audio_input::AudioInputConnection>,
+    /// Pitches the game itself is sounding; used to suppress
+    /// mic-detected ghost notes (echo suppression, design §6).
+    pub sounding: std::sync::Arc<crate::sounding_tracker::SharedSoundingTracker>,
+    /// Mic settings-flow state (download/connect progress).
+    pub mic_setup: MicSetupState,
     pub input_manager: InputManager,
     pub config: Config,
 
@@ -67,6 +85,9 @@ impl Context {
             quad_renderer_factory,
 
             output_manager: Default::default(),
+            audio_input: None,
+            sounding: crate::sounding_tracker::shared(),
+            mic_setup: MicSetupState::Idle,
             input_manager: InputManager::new(proxy.clone()),
             config,
             proxy,
@@ -84,5 +105,49 @@ impl Context {
             self.window_state.scale_factor as f32,
         );
         self.transform.update(&self.gpu.queue);
+    }
+
+    /// Establish/re-establish the microphone input connection.
+    /// The caller must ensure the model is in place (Phase 4 handles
+    /// download; this task always calls it with an existing path).
+    pub fn connect_audio_input(&mut self, model_path: &std::path::Path) -> Result<(), String> {
+        self.audio_input = None; // drop the old connection
+
+        let device_name = match self.config.mic_device() {
+            Some(name) => Some(name.to_owned()),
+            // Heuristic default (built-in mic over Continuity/virtual
+            // devices) — macOS enumeration often puts "…iPhone…
+            // Microphone" first, which would silently listen to a phone.
+            None => audio_input::AudioInputManager::default_device().map(|d| d.0),
+        };
+
+        let Some(device_name) = device_name else {
+            return Err("no microphone devices found".into());
+        };
+        if self.config.mic_device().is_none() {
+            // Persist the resolved choice so the Device row shows what
+            // is actually in use and reconnects stay stable.
+            self.config.set_mic_device(Some(device_name.clone()));
+        }
+
+        let proxy = self.proxy.clone();
+        let device = audio_input::MicDevice(device_name);
+        let model_path = model_path.to_owned();
+
+        let conn = audio_input::AudioInputManager::connect(&device, &model_path, move |event| {
+            if let Some(ev) = crate::mic_event_to_neothesia(event) {
+                // Send errors after loop teardown are expected and
+                // harmless (late events for ~60ms after drop).
+                proxy.send_event(ev).ok();
+            }
+        })
+        .map_err(|e| e.to_string())?;
+
+        self.audio_input = Some(conn);
+        Ok(())
+    }
+
+    pub fn disconnect_audio_input(&mut self) {
+        self.audio_input = None;
     }
 }
