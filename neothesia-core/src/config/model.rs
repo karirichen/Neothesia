@@ -21,6 +21,8 @@ pub struct Model {
     pub appearance: AppearanceConfig,
     #[serde(default)]
     pub pc_keyboard: PcKeyboardConfig,
+    #[serde(default)]
+    pub mic: MicConfig,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -213,6 +215,25 @@ impl Default for PcKeyboardConfig {
         Self::V1(PcKeyboardConfigV1 {
             octave_shift: default_octave_shift(),
         })
+    }
+}
+
+#[derive(Serialize, Deserialize, Clone, Default)]
+pub struct MicConfigV1 {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub device: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum MicConfig {
+    V1(MicConfigV1),
+}
+
+impl Default for MicConfig {
+    fn default() -> Self {
+        Self::V1(MicConfigV1::default())
     }
 }
 

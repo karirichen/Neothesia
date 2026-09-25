@@ -8,7 +8,7 @@ use winit::{
 };
 
 use crate::{
-    NeothesiaEvent,
+    InputSource, NeothesiaEvent,
     context::Context,
     scene::{
         MouseToMidiEventState, NuonRenderer, Scene,
@@ -256,12 +256,24 @@ impl Scene for FreeplayScene {
         );
     }
 
-    fn midi_event(&mut self, ctx: &mut Context, channel: u8, message: &MidiMessage) {
+    fn midi_event(
+        &mut self,
+        ctx: &mut Context,
+        source: InputSource,
+        channel: u8,
+        message: &MidiMessage,
+    ) {
         self.recorder.push_event(channel, *message);
         self.keyboard.user_midi_event(message);
-        ctx.output_manager
-            .connection()
-            .midi_event(channel.into(), *message);
+
+        // Mic source is not forwarded: the real piano is the sound
+        // source; a synth follow-along would create echo.
+        if source != InputSource::Mic {
+            ctx.sounding.track_midi_event(message);
+            ctx.output_manager
+                .connection()
+                .midi_event(channel.into(), *message);
+        }
 
         if let MidiMessage::NoteOn { .. } = message {
             let start = self.keyboard.layout().range.start();

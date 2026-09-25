@@ -61,8 +61,14 @@ pub fn settings_ron() -> Option<PathBuf> {
     #[cfg(target_os = "windows")]
     return Some(PathBuf::from("./settings.ron"));
 
+    // Bundled macOS builds keep settings in the app bundle's resources;
+    // bare binaries (e.g. `cargo run`) have no bundle, so fall back to
+    // the XDG path — otherwise settings silently don't persist at all
+    // between dev runs.
     #[cfg(target_os = "macos")]
-    return bundled_resource_path("settings", "ron").map(PathBuf::from);
+    return bundled_resource_path("settings", "ron")
+        .map(PathBuf::from)
+        .or_else(|| xdg_config().map(|p| p.join("settings.ron")));
 }
 
 #[cfg(target_os = "macos")]

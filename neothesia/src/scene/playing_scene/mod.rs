@@ -12,8 +12,8 @@ use self::top_bar::TopBar;
 
 use super::{NuonRenderer, Scene};
 use crate::{
-    NeothesiaEvent, context::Context, render::WaterfallRenderer, scene::MouseToMidiEventState,
-    song::Song, utils::window::WinitEvent,
+    InputSource, NeothesiaEvent, context::Context, render::WaterfallRenderer,
+    scene::MouseToMidiEventState, song::Song, utils::window::WinitEvent,
 };
 
 mod keyboard;
@@ -99,6 +99,7 @@ impl PlayingScene {
             song,
             keyboard_layout.range.clone(),
             ctx.config.separate_channels(),
+            ctx.sounding.clone(),
         );
         waterfall.update(player.time_without_lead_in());
 
@@ -333,8 +334,14 @@ impl Scene for PlayingScene {
         super::handle_nuon_window_event(&mut self.nuon, event, ctx);
     }
 
-    fn midi_event(&mut self, _ctx: &mut Context, channel: u8, message: &MidiMessage) {
-        self.player.user_midi_event(channel, message);
+    fn midi_event(
+        &mut self,
+        _ctx: &mut Context,
+        source: InputSource,
+        channel: u8,
+        message: &MidiMessage,
+    ) {
+        self.player.user_midi_event(channel, message, source);
         self.keyboard.user_midi_event(message);
     }
 }

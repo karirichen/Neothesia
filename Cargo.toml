@@ -5,6 +5,7 @@ members = [
   "ffmpeg-encoder",
   "neothesia",
   "neothesia-ai",
+  "audio-input",
   "neothesia-cli",
   "neothesia-core",
   "neothesia-image",
@@ -23,6 +24,8 @@ edition = "2024"
 wgpu-jumpstart = { path = "./wgpu-jumpstart" }
 neothesia-core = { path = "./neothesia-core" }
 neothesia-image = { path = "./neothesia-image" }
+neothesia-ai = { path = "./neothesia-ai" }
+audio-input = { path = "./audio-input" }
 midi-file = { path = "./midi-file" }
 midi-io = { path = "./midi-io" }
 piano-layout = { path = "./piano-layout" }
@@ -78,8 +81,14 @@ clap = { version = "4.5.41", default-features = false, features = [
 
 # neothesia-ai deps
 ndarray = "0.17"
-rten = "0.24"
-rten-tensor = "0.24"
+rten = "0.26"
+rten-tensor = "0.26"
 serde_json = "1"
 symphonia = { version = "0.6", features = ["mp3"] }
 symphonium = { version = "0.12", features = ["mp3"] }
+
+# audio-input deps
+rubato = "0.16"
+ureq = { version = "2", default-features = false, features = ["tls"] }
+sha2 = "0.10"
+dirs = "6"

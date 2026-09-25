@@ -14,5 +14,7 @@
         <string>6.0</string>
         <key>CFBundlePackageType</key>
         <string>APPL</string>
+        <key>NSMicrophoneUsageDescription</key>
+        <string>Neothesia uses the microphone to detect the notes you play on an acoustic piano.</string>
     </dict>
 </plist>

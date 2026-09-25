@@ -5,8 +5,9 @@ mod model;
 pub use model::ColorSchemaV1;
 use model::{
     AppearanceConfig, AppearanceConfigV1, DevicesConfig, DevicesConfigV1, History, HistoryV1,
-    LayoutConfig, LayoutConfigV1, Model, PcKeyboardConfig, PcKeyboardConfigV1, PlaybackConfig,
-    PlaybackConfigV1, SynthConfig, SynthConfigV1, WaterfallConfig, WaterfallConfigV1,
+    LayoutConfig, LayoutConfigV1, MicConfig, MicConfigV1, Model, PcKeyboardConfig,
+    PcKeyboardConfigV1, PlaybackConfig, PlaybackConfigV1, SynthConfig, SynthConfigV1,
+    WaterfallConfig, WaterfallConfigV1,
 };
 
 fn ron_options() -> ron::Options {
@@ -45,6 +46,7 @@ impl Model {
             keyboard_layout,
             appearance,
             pc_keyboard,
+            mic,
         } = config;
 
         Self {
@@ -56,6 +58,7 @@ impl Model {
             devices: DevicesConfig::V1(devices),
             appearance: AppearanceConfig::V1(appearance),
             pc_keyboard: PcKeyboardConfig::V1(pc_keyboard),
+            mic: MicConfig::V1(mic),
         }
     }
 
@@ -85,6 +88,9 @@ impl Model {
             pc_keyboard: match self.pc_keyboard {
                 PcKeyboardConfig::V1(v) => v,
             },
+            mic: match self.mic {
+                MicConfig::V1(v) => v,
+            },
         }
     }
 }
@@ -99,6 +105,7 @@ pub struct Config {
     history: HistoryV1,
     keyboard_layout: LayoutConfigV1,
     pc_keyboard: PcKeyboardConfigV1,
+    mic: MicConfigV1,
 }
 
 impl Default for Config {
@@ -130,6 +137,22 @@ impl Config {
 
     pub fn separate_channels(&self) -> bool {
         self.devices.separate_channels
+    }
+
+    pub fn mic_enabled(&self) -> bool {
+        self.mic.enabled
+    }
+
+    pub fn set_mic_enabled(&mut self, enabled: bool) {
+        self.mic.enabled = enabled;
+    }
+
+    pub fn mic_device(&self) -> Option<&str> {
+        self.mic.device.as_deref()
+    }
+
+    pub fn set_mic_device(&mut self, device: Option<String>) {
+        self.mic.device = device;
     }
 
     pub fn vertical_guidelines(&self) -> bool {
@@ -288,5 +311,52 @@ impl Config {
             std::fs::create_dir_all(path.parent().unwrap()).ok();
             std::fs::write(path, s).ok();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mic_config_roundtrip() {
+        let mut config = Model::default().build();
+        config.set_mic_enabled(true);
+        config.set_mic_device(Some("Test Mic".into()));
+
+        let serialized = ron_options()
+            .to_string_pretty(
+                &Model::from_config(config),
+                ron::ser::PrettyConfig::default(),
+            )
+            .unwrap();
+
+        let deserialized: Model = ron_options().from_str(&serialized).unwrap();
+        let config = deserialized.build();
+
+        assert!(config.mic_enabled());
+        assert_eq!(config.mic_device(), Some("Test Mic"));
+    }
+
+    #[test]
+    fn mic_config_missing_section_uses_defaults() {
+        let serialized = ron_options()
+            .to_string_pretty(&Model::default(), ron::ser::PrettyConfig::default())
+            .unwrap();
+        // simulate an old config file: strip the mic section
+        let old = serialized.replace(
+            "    mic: V1(\n        enabled: false,\n        device: None,\n    ),\n",
+            "",
+        );
+        assert!(
+            old.len() < serialized.len(),
+            "mic section not found in serialized output: {serialized}"
+        );
+
+        let model: Model = ron_options().from_str(&old).unwrap();
+        let config = model.build();
+
+        assert!(!config.mic_enabled());
+        assert_eq!(config.mic_device(), None);
     }
 }

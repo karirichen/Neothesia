@@ -1,7 +1,7 @@
 use std::num::NonZeroU32;
 use std::path::Path;
 
-use crate::{SAMPLE_RATE, SEGMENT_SAMPLES};
+use neothesia_ai::{SAMPLE_RATE, SEGMENT_SAMPLES};
 
 pub fn load(path: impl AsRef<Path>) -> anyhow::Result<Vec<f32>> {
     let probed = symphonium::probe_from_file(path.as_ref(), None)?;

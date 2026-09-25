@@ -43,6 +43,7 @@ impl InputManager {
                     // Some keyboards send NoteOn event with vel 0 instead of NoteOff
                     midly::MidiMessage::NoteOn { key, vel } if vel == 0 => {
                         tx.send_event(NeothesiaEvent::MidiInput {
+                            source: crate::InputSource::Midi,
                             channel: channel.as_int(),
                             message: MidiMessage::NoteOff { key, vel },
                         })
@@ -50,6 +51,7 @@ impl InputManager {
                     }
                     message => {
                         tx.send_event(NeothesiaEvent::MidiInput {
+                            source: crate::InputSource::Midi,
                             channel: channel.as_int(),
                             message,
                         })

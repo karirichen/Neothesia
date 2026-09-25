@@ -1,14 +1,15 @@
 use std::path::PathBuf;
 
 use crate::{
-    context::Context,
+    NeothesiaEvent,
+    context::{Context, MicSetupState},
     scene::menu_scene::{MsgFn, Popup, icons, neo_btn_icon, on_async},
     utils::BoxFuture,
 };
 use nuon::TextJustify;
 use piano_layout::Key;
 
-use super::UiState;
+use super::{UiState, state::InputDescriptor};
 
 #[derive(Default, Debug, Clone)]
 pub enum RangeDetection {
@@ -135,6 +136,12 @@ impl super::MenuScene {
                     .width(body_w)
                     .build(ui, |ui, rows, spacer| {
                         self.settings_input_section(ctx, ui, rows, spacer);
+                    });
+
+                nuon::settings_section("Microphone Input")
+                    .width(body_w)
+                    .build(ui, |ui, rows, spacer| {
+                        self.settings_mic_section(ctx, ui, rows, spacer);
                     });
 
                 nuon::settings_section("Note Range")
@@ -397,13 +404,30 @@ impl super::MenuScene {
                     .y(btn_y + btn_h)
                     .add_to_current(ui);
 
-                let data = &mut self.state;
-
-                if let Some(input) =
-                    nuon::combo_list(ui, "select_input_", (btn_w, btn_h), &data.inputs)
-                {
-                    ctx.config.set_input(Some(&input));
-                    data.selected_input = Some(input.clone());
+                let picked = {
+                    let data = &mut self.state;
+                    nuon::combo_list(ui, "select_input_", (btn_w, btn_h), &data.inputs).cloned()
+                };
+                if let Some(input) = picked {
+                    match &input {
+                        InputDescriptor::Mic => {
+                            // Selecting the acoustic piano enables the
+                            // microphone path (download/connect handled
+                            // by the shared flow).
+                            self.enable_mic(ctx);
+                        }
+                        InputDescriptor::Midi(port) => {
+                            // An explicit MIDI port choice opts out of
+                            // mic input (mutually exclusive inputs).
+                            if ctx.config.mic_enabled() {
+                                ctx.config.set_mic_enabled(false);
+                                ctx.disconnect_audio_input();
+                                ctx.mic_setup = MicSetupState::Idle;
+                            }
+                            ctx.config.set_input(Some(port));
+                        }
+                    }
+                    self.state.selected_input = Some(input);
                     self.popup.close();
                 }
             });
@@ -421,6 +445,133 @@ impl super::MenuScene {
             .title("Input")
             .body(|ui, row_w, row_h| self.settings_input_picker(ui, ctx, row_w, row_h))
             .build(ui, rows);
+    }
+
+    /// Shared enable flow for the settings toggler and the Input
+    /// picker's mic entry: connect immediately if the model is cached,
+    /// otherwise kick off the off-thread download.
+    fn enable_mic(&mut self, ctx: &mut Context) {
+        if matches!(ctx.mic_setup, MicSetupState::Downloading) {
+            return;
+        }
+        ctx.config.set_mic_enabled(true);
+        if audio_input::model_store::model_path().exists() {
+            match ctx.connect_audio_input(&audio_input::model_store::model_path()) {
+                Ok(()) => ctx.mic_setup = MicSetupState::Idle,
+                Err(e) => {
+                    ctx.config.set_mic_enabled(false);
+                    ctx.mic_setup = MicSetupState::Failed(e);
+                }
+            }
+        } else {
+            ctx.mic_setup = MicSetupState::Downloading;
+            // ensure_model() does blocking HTTP I/O — must run off
+            // the UI thread; result arrives via MicModelReady.
+            let proxy = ctx.proxy.clone();
+            std::thread::Builder::new()
+                .name("mic-model-download".into())
+                .spawn(move || {
+                    let result = audio_input::model_store::ensure_model();
+                    let event = match result {
+                        Ok(path) => NeothesiaEvent::MicModelReady(Ok(path)),
+                        Err(e) => NeothesiaEvent::MicModelReady(Err(e.to_string())),
+                    };
+                    proxy.send_event(event).ok();
+                })
+                .expect("failed to spawn download thread");
+        }
+    }
+
+    fn settings_mic_section(
+        &mut self,
+        ctx: &mut Context,
+        ui: &mut nuon::Ui,
+        rows: &dyn Fn(&mut nuon::Ui, nuon::SettingsRow<'_>),
+        spacer: &dyn Fn(&mut nuon::Ui),
+    ) {
+        let enabled = ctx.config.mic_enabled();
+
+        match &ctx.mic_setup {
+            MicSetupState::Downloading => {
+                nuon::settings_row()
+                    .title("Microphone")
+                    .subtitle("Downloading pitch model...")
+                    .build(ui, rows);
+                return; // no toggling while downloading
+            }
+            MicSetupState::Failed(msg) => {
+                nuon::settings_row()
+                    .title("Microphone")
+                    .subtitle(format!("Error: {msg}"))
+                    .build(ui, rows);
+            }
+            _ => {}
+        }
+
+        if nuon::settings_row_toggler()
+            .title("Enable Microphone Input")
+            .subtitle("Detect played notes via mic (acoustic pianos)")
+            .value(enabled)
+            .build(ui, rows)
+        {
+            if !enabled {
+                self.enable_mic(ctx);
+            } else {
+                ctx.config.set_mic_enabled(false);
+                ctx.disconnect_audio_input();
+                ctx.mic_setup = MicSetupState::Idle;
+            }
+        }
+
+        spacer(ui);
+
+        let devices: Vec<String> = audio_input::AudioInputManager::devices()
+            .into_iter()
+            .map(|d| d.0)
+            .collect();
+
+        if devices.is_empty() {
+            nuon::settings_row()
+                .title("Device")
+                .subtitle("No microphone found — check Privacy & Security > Microphone")
+                .build(ui, rows);
+        } else {
+            let current = ctx
+                .config
+                .mic_device()
+                .map(str::to_owned)
+                .unwrap_or_else(|| devices[0].clone());
+            let spin = nuon::settings_row_spin()
+                .title("Device")
+                .subtitle(current.clone())
+                .id("mic-device")
+                .build(ui, rows);
+
+            let idx = devices.iter().position(|d| d == &current).unwrap_or(0);
+            let next = |dir: i32| {
+                let n = devices.len() as i32;
+                let ni = ((idx as i32 + dir + n) % n) as usize;
+                devices[ni].clone()
+            };
+
+            let picked = match spin {
+                nuon::SettingsRowSpinResult::Plus => Some(next(1)),
+                nuon::SettingsRowSpinResult::Minus => Some(next(-1)),
+                nuon::SettingsRowSpinResult::Idle => None,
+            };
+            if let Some(d) = picked {
+                ctx.config.set_mic_device(Some(d));
+                // Without a downloaded model there is nothing to connect
+                // with — keep the saved choice; it applies on next enable.
+                if ctx.config.mic_enabled()
+                    && audio_input::model_store::model_path().exists()
+                    && let Err(e) = ctx.connect_audio_input(&audio_input::model_store::model_path())
+                {
+                    log::warn!("mic reconnect on device change failed: {e}");
+                    ctx.mic_setup = crate::context::MicSetupState::Failed(e);
+                }
+            }
+        }
     }
 
     fn settings_calibrate_row(
@@ -496,23 +647,26 @@ impl super::MenuScene {
                 .build(ui);
 
             if event.is_press_start() {
-                ctx.output_manager.connection().midi_event(
-                    0.into(),
-                    midi_file::midly::MidiMessage::NoteOn {
-                        key: note.into(),
-                        vel: 100.into(),
-                    },
-                );
+                let message = midi_file::midly::MidiMessage::NoteOn {
+                    key: note.into(),
+                    vel: 100.into(),
+                };
+                // Track so previewed pitches are suppressed for mic users
+                ctx.sounding.track_midi_event(&message);
+                ctx.output_manager
+                    .connection()
+                    .midi_event(0.into(), message);
                 self.midi_input_state.note_on(note);
             }
             if event.is_press_end() {
-                ctx.output_manager.connection().midi_event(
-                    0.into(),
-                    midi_file::midly::MidiMessage::NoteOff {
-                        key: note.into(),
-                        vel: 0.into(),
-                    },
-                );
+                let message = midi_file::midly::MidiMessage::NoteOff {
+                    key: note.into(),
+                    vel: 0.into(),
+                };
+                ctx.sounding.track_midi_event(&message);
+                ctx.output_manager
+                    .connection()
+                    .midi_event(0.into(), message);
                 self.midi_input_state.note_off(note);
             }
 
